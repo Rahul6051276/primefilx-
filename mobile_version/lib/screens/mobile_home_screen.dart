@@ -27,14 +27,13 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   var hollywoodHindiDubbed = [];
   var hindiWebSeries = [];
 
-  // Rich Catalogs (200+ multi-language items for providers)
+  // Rich Catalogs for Providers
   List allBollywood200 = [];
   List allSouth200 = [];
   List allHollywood200 = [];
   List allHindiSeries200 = [];
   List allEnglishSeries200 = [];
 
-  // Banner Carousel Controller
   final PageController _bannerController = PageController();
   int _currentBannerIndex = 0;
   Timer? _carouselTimer;
@@ -137,7 +136,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     } catch (_) {}
   }
 
-  // Fetch 200+ comprehensive catalog items in background for streaming providers
   void _fetchDeepCatalogsInBackground() async {
     try {
       final responses = await Future.wait([
@@ -202,7 +200,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  // Long press to add movie/show to My List
   Future _addToMyList(dynamic item) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -300,11 +297,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Banner Carousel (Clean OTT style, top tabs & 18+ removed completely)
                   _buildTopFeaturedCarousel(),
                   const SizedBox(height: 16),
-
-                  // Streaming Section Title & Providers Row (Includes Netflix, JioHotstar, Prime Video, ZEE5, SonyLIV)
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
@@ -319,8 +313,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                   const SizedBox(height: 8),
                   _buildStreamingProvidersRow(),
                   const SizedBox(height: 16),
-
-                  // Content Rows with Long Press to My List support
                   _buildHorizontalMovieList('Trending Now', bollywoodLatest),
                   const SizedBox(height: 16),
                   _buildHorizontalMovieList('Hollywood Movies (Hindi Dubbed)', hollywoodHindiDubbed),
@@ -330,6 +322,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 ],
               ),
             ),
+      // Clean Bottom Navigation Bar with ONLY Home and My List
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: const Color(0xFF0F1014),
         type: BottomNavigationBarType.fixed,
@@ -337,7 +330,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         unselectedItemColor: Colors.white54,
         currentIndex: 0,
         onTap: (index) {
-          if (index == 3) {
+          if (index == 1) {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const MyListScreen()),
@@ -348,14 +341,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.home_filled),
             label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.sort_rounded),
-            label: 'Sort',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.local_fire_department_rounded),
-            label: 'Ranking',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.bookmark_added_rounded),
@@ -566,7 +551,7 @@ class _MobileCategoryGridScreen extends StatelessWidget {
       body: rawItems.isEmpty
           ? const Center(
               child: Text(
-                'Loading rich catalog (Hindi, English, South)...',
+                'Loading rich catalog...',
                 style: TextStyle(color: Colors.white70),
               ),
             )
