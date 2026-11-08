@@ -18,7 +18,7 @@ class CatalogService {
     return blockList.any((b) => t.contains(b));
   }
 
-  static List<dynamic> parseResults(dynamic list, {bool isTv = false}) {
+  static List parseResults(dynamic list, {bool isTv = false}) {
     var res = [];
     final currentYear = DateTime.now().year.toString();
     for (var m in (list ?? [])) {
@@ -40,7 +40,7 @@ class CatalogService {
     return res;
   }
 
-  static Future>> fetchMassiveCatalogs() async {
+  static Future> fetchMassiveCatalogs() async {
     try {
       final responses = await Future.wait([
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=8&watch_region=IN&sort_by=popularity.desc')).timeout(const Duration(seconds: 6)),
