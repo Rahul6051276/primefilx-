@@ -27,7 +27,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   var hollywoodHindiDubbed = [];
   var hindiWebSeries = [];
 
-  // Provider-specific separate catalogs (Movies & Web Series mix)
   List netflixCatalog = [];
   List primeCatalog = [];
   List hotstarCatalog = [];
@@ -70,17 +69,13 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   Future _loadFastInitialData() async {
+    setState(() => isLoading = false);
+
     await Future.wait([
       _fetchProviders(),
       _loadContinueWatching(),
       _fetchMainHomeContent(),
     ]);
-
-    if (mounted) {
-      setState(() => isLoading = false);
-      final total = heroBanners.isNotEmpty ? heroBanners.length : 1;
-      _startCarouselTimer(total);
-    }
 
     _fetchProviderCatalogsInBackground();
   }
@@ -120,6 +115,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         bollywoodLatest = _parseResults(jsonDecode(responses[0].body)['results']);
         if (bollywoodLatest.isNotEmpty) {
           heroBanners = bollywoodLatest.take(6).toList();
+          _startCarouselTimer(heroBanners.length);
         }
       }
 
@@ -138,10 +134,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     } catch (_) {}
   }
 
-  // Fetch unique, provider-specific catalogs in background (Movies & Web Series mix)
   void _fetchProviderCatalogsInBackground() async {
     try {
-      // Netflix: English series + Hindi movies
       final netflixRes = await Future.wait([
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=vote_count.desc&page=1')),
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&page=1')),
@@ -154,7 +148,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       }
 
-      // Prime Video: Hollywood movies + English/Hindi action series
       final primeRes = await Future.wait([
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&page=1')),
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_genres=10759&sort_by=vote_count.desc&page=1')),
@@ -167,7 +160,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       }
 
-      // JioHotstar: Hindi Web Series + Disney/Popular Movies
       final hotstarRes = await Future.wait([
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&page=1')),
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=vote_average.desc&page=1')),
@@ -180,7 +172,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       }
 
-      // ZEE5 & SonyLIV: South Dubbed + Regional & Drama Shows
       final regionalRes = await Future.wait([
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&sort_by=popularity.desc&page=1')),
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_genres=18&sort_by=vote_count.desc&page=1')),
@@ -353,37 +344,35 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           ],
         ),
       ),
-      body: isLoading && bollywoodLatest.isEmpty
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF0072D2)))
-          : SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildTopFeaturedCarousel(),
-                  const SizedBox(height: 16),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      'Streaming',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildStreamingProvidersRow(),
-                  const SizedBox(height: 16),
-                  _buildHorizontalMovieList('Trending Now', bollywoodLatest),
-                  const SizedBox(height: 16),
-                  _buildHorizontalMovieList('Hollywood Movies (Hindi Dubbed)', hollywoodHindiDubbed),
-                  const SizedBox(height: 16),
-                  _buildHorizontalMovieList('Hindi Web Series', hindiWebSeries),
-                  const SizedBox(height: 24),
-                ],
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildTopFeaturedCarousel(),
+            const SizedBox(height: 16),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Streaming',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
+            const SizedBox(height: 8),
+            _buildStreamingProvidersRow(),
+            const SizedBox(height: 16),
+            _buildHorizontalMovieList('Trending Now', bollywoodLatest),
+            const SizedBox(height: 16),
+            _buildHorizontalMovieList('Hollywood Movies (Hindi Dubbed)', hollywoodHindiDubbed),
+            const SizedBox(height: 16),
+            _buildHorizontalMovieList('Hindi Web Series', hindiWebSeries),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: const Color(0xFF0F1014),
         type: BottomNavigationBarType.fixed,
@@ -413,7 +402,18 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   Widget _buildTopFeaturedCarousel() {
-    if (heroBanners.isEmpty) return const SizedBox.shrink();
+    if (heroBanners.isEmpty) {
+      return Container(
+        height: 220,
+        margin: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: Colors.grey[900],
+          borderRadius: BorderRadius.circular(14),
+        ),
+        alignment: Alignment.center,
+        child: const CircularProgressIndicator(color: Color(0xFF0072D2)),
+      );
+    }
 
     return SizedBox(
       height: 220,
@@ -477,7 +477,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       {'name': 'SonyLIV', 'color': const Color(0xFFFC4C02)},
     ];
 
-    return Container(
+    return SizedBox(
       height: 55,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
@@ -522,7 +522,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   Widget _buildHorizontalMovieList(String title, List items) {
-    if (items.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -539,48 +538,56 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         ),
         SizedBox(
           height: 160,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: items.length,
-            itemBuilder: (ctx, index) {
-              final item = items[index];
-              return GestureDetector(
-                onTap: () => _onItemTapped(item),
-                onLongPress: () => _addToMyList(item),
-                child: Container(
-                  width: 110,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.network(
-                            item['poster'] ?? '',
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            errorBuilder: (_, __, ___) => Container(
-                              color: Colors.grey[850],
-                              child: const Icon(Icons.broken_image, color: Colors.white24),
+          child: items.isEmpty
+              ? const Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0072D2)),
+                  ),
+                )
+              : ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: items.length,
+                  itemBuilder: (ctx, index) {
+                    final item = items[index];
+                    return GestureDetector(
+                      onTap: () => _onItemTapped(item),
+                      onLongPress: () => _addToMyList(item),
+                      child: Container(
+                        width: 110,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  item['poster'] ?? '',
+                                  fit: BoxFit.cover,
+                                  width: double.infinity,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: Colors.grey[850],
+                                    child: const Icon(Icons.broken_image, color: Colors.white24),
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
+                            const SizedBox(height: 4),
+                            Text(
+                              item['title'] ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item['title'] ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
       ],
     );
@@ -725,10 +732,7 @@ class _MobileCategoryGridScreen extends StatelessWidget {
       ),
       body: rawItems.isEmpty
           ? const Center(
-              child: Text(
-                'Loading rich catalog...',
-                style: TextStyle(color: Colors.white70),
-              ),
+              child: CircularProgressIndicator(color: Color(0xFF0072D2)),
             )
           : GridView.builder(
               padding: const EdgeInsets.all(12),
