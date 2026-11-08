@@ -9,7 +9,8 @@ import '../widgets/mobile_stream_modal.dart';
 import '../widgets/home_drawer.dart';
 import '../widgets/category_grid_screen.dart';
 import '../internal_player.dart';
-import 'my_list_screen.dart'; // My List screen import kiya hai
+import 'search_screen.dart'; // Search screen linked
+import 'my_list_screen.dart'; // My List screen linked
 
 class MobileHomeScreen extends StatefulWidget {
   const MobileHomeScreen({super.key});
@@ -398,7 +399,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  // --- PRIMEFLIX TOP TABS WIDGET (Recommend, Movies, TV Shows, 18+) ---
+  // --- PRIMEFLIX TOP TABS WIDGET ---
   Widget _buildCategoryTabs() {
     final tabs = ['Recommend', 'Movies', 'TV Shows', '18+'];
     return Container(
@@ -945,6 +946,18 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               ),
             ],
           ),
+          actions: [
+            // Search Icon linked to SearchScreen
+            IconButton(
+              icon: const Icon(Icons.search_rounded, color: Colors.white, size: 26),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SearchScreen()),
+                );
+              },
+            ),
+          ],
         ),
       ),
       body: isLoading
@@ -960,15 +973,10 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 1. Primeflix Top Tabs (Recommend, Movies, TV Shows, 18+)
                     _buildCategoryTabs(),
                     const SizedBox(height: 4),
-
-                    // 2. Top Featured Slider / Banner
                     _buildTopFeaturedCarousel(),
                     const SizedBox(height: 6),
-
-                    // 3. Streaming Providers Row (Netflix, Hotstar, Amazon)
                     _buildStreamingProvidersRow(),
                     const SizedBox(height: 8),
 
@@ -1009,16 +1017,20 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 ),
               ),
             ),
-      // --- BOTTOM NAVIGATION BAR AS SHOWN IN SCREENSHOT ---
+      // --- BOTTOM NAVIGATION BAR ---
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: const Color(0xFF0F1014),
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFFE50914), // Primeflix Red
+        selectedItemColor: const Color(0xFFE50914),
         unselectedItemColor: Colors.white54,
         currentIndex: 0,
         onTap: (index) {
-          if (index == 3) {
-            // My List screen open karega
+          if (index == 1) {
+            // Sort option or action can go here
+          } else if (index == 2) {
+            // Ranking action
+          } else if (index == 3) {
+            // My List screen navigation
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const MyListScreen()),
