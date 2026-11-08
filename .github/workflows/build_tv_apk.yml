@@ -27,6 +27,13 @@ jobs:
           channel: 'stable'
           cache: false
 
+      - name: Fix AndroidManifest Path
+        run: |
+          mkdir -p mobile_version/android/app/src/main
+          if [ -f mobile_version/android/src/main/AndroidManifest.xml ]; then
+            cp mobile_version/android/src/main/AndroidManifest.xml mobile_version/android/app/src/main/AndroidManifest.xml
+          fi
+
       - name: Clean and Install Dependencies
         run: |
           cd mobile_version
