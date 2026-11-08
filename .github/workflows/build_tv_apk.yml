@@ -27,9 +27,10 @@ jobs:
           channel: 'stable'
           cache: false
 
-      - name: Install Dependencies & Build APK
+      - name: Fix Android Embedding V2 & Build APK
         run: |
           cd mobile_version
+          flutter create . --platforms=android
           flutter pub get
           flutter build apk --release
 
