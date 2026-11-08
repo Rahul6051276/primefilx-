@@ -27,47 +27,16 @@ jobs:
           channel: 'stable'
           cache: false
 
-      - name: Force Fix AndroidManifest for V2 Embedding
+      - name: Regenerate Android Folder to Fix Unsupported Gradle
         run: |
-          mkdir -p mobile_version/android/app/src/main
-          
-          # Create the correct V2 AndroidManifest file directly via script
-          cat << 'EOF' > mobile_version/android/app/src/main/AndroidManifest.xml
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-              <application
-                  android:label="primefilx"
-                  android:name="${applicationName}"
-                  android:icon="@mipmap/ic_launcher"
-                  android:usesCleartextTraffic="true">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:launchMode="singleTop"
-                      android:theme="@style/LaunchTheme"
-                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-                      android:hardwareAccelerated="true"
-                      android:windowSoftInputMode="adjustResize">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
-                      </intent-filter>
-                  </activity>
-                  <meta-data
-                      android:name="flutterEmbedding"
-                      android:value="2" />
-              </application>
-          </manifest>
-          EOF
-          
-          # Copy it to legacy path just in case Flutter looks there too
-          cp mobile_version/android/app/src/main/AndroidManifest.xml mobile_version/android/AndroidManifest.xml
+          cd mobile_version
+          # Purana kharab android folder hata kar bilkul naya v2 compatible android folder bana lo
+          rm -rf android
+          flutter create . --platforms=android --org com.example
 
       - name: Clean and Install Dependencies
         run: |
           cd mobile_version
-          rm -f pubspec.lock
           flutter clean
           flutter pub get
 
@@ -82,7 +51,7 @@ jobs:
           tag_name: v1.0.${{ github.run_number }}
           name: Primefilx Release v1.0.${{ github.run_number }}
           files: mobile_version/build/app/outputs/flutter-apk/app-release.apk
-          body: "Automated manual build for Primefilx Android APK."
+          body: "Automated manual build for Primefilx Android APK with fresh Gradle."
           draft: false
           prerelease: false
         env:
