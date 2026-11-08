@@ -27,12 +27,42 @@ jobs:
           channel: 'stable'
           cache: false
 
-      - name: Fix AndroidManifest Path
+      - name: Force Fix AndroidManifest for V2 Embedding
         run: |
           mkdir -p mobile_version/android/app/src/main
-          if [ -f mobile_version/android/src/main/AndroidManifest.xml ]; then
-            cp mobile_version/android/src/main/AndroidManifest.xml mobile_version/android/app/src/main/AndroidManifest.xml
-          fi
+          
+          # Create the correct V2 AndroidManifest file directly via script
+          cat << 'EOF' > mobile_version/android/app/src/main/AndroidManifest.xml
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <application
+                  android:label="primefilx"
+                  android:name="${applicationName}"
+                  android:icon="@mipmap/ic_launcher"
+                  android:usesCleartextTraffic="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTop"
+                      android:theme="@style/LaunchTheme"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+                      android:hardwareAccelerated="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <meta-data
+                      android:name="flutterEmbedding"
+                      android:value="2" />
+              </application>
+          </manifest>
+          EOF
+          
+          # Copy it to legacy path just in case Flutter looks there too
+          cp mobile_version/android/app/src/main/AndroidManifest.xml mobile_version/android/AndroidManifest.xml
 
       - name: Clean and Install Dependencies
         run: |
