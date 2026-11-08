@@ -7,6 +7,9 @@ import '../services/tmdb_service.dart';
 import '../services/stream_service.dart';
 import '../services/catalog_service.dart';
 import '../widgets/mobile_stream_modal.dart';
+// Agar yeh widgets kisi aur file mein hain toh unke imports yahan ensure kar lein:
+// import '../widgets/mobile_season_episode_selector.dart';
+// import '../widgets/mobile_category_grid_screen.dart';
 import 'search_screen.dart';
 import 'my_list_screen.dart';
 
@@ -26,11 +29,11 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   var hollywoodHindiDubbed = [];
   var hindiWebSeries = [];
 
-  List netflixCatalog = [];
-  List primeCatalog = [];
-  List hotstarCatalog = [];
-  List zee5Catalog = [];
-  List sonylivCatalog = [];
+  List<dynamic> netflixCatalog = [];
+  List<dynamic> primeCatalog = [];
+  List<dynamic> hotstarCatalog = [];
+  List<dynamic> zee5Catalog = [];
+  List<dynamic> sonylivCatalog = [];
 
   final PageController _bannerController = PageController();
   int _currentBannerIndex = 0;
