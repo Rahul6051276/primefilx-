@@ -43,9 +43,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   dynamic topLiveChannel;
   bool isLiveSportsLoading = true;
 
-  // Primeflix Top Tabs State ('Recommend', 'Movies', 'TV Shows', '18+')
-  String _selectedTab = 'Recommend';
-
   // Banner Carousel Controller
   final PageController _bannerController = PageController();
   int _currentBannerIndex = 0;
@@ -144,71 +141,51 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
   Future _fetchTmdbContent() async {
     try {
-      try {
-        final bollyRes = await http.get(Uri.parse(
-            '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=10')).timeout(const Duration(seconds: 8));
-        if (bollyRes.statusCode == 200) {
-          bollywoodLatest = _parseResults(jsonDecode(bollyRes.body)['results']);
-          if (bollywoodLatest.isNotEmpty) heroBanners = bollywoodLatest.take(6).toList();
-        }
-      } catch (_) {}
+      final bollyRes = await http.get(Uri.parse(
+          '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=10')).timeout(const Duration(seconds: 8));
+      if (bollyRes.statusCode == 200) {
+        bollywoodLatest = _parseResults(jsonDecode(bollyRes.body)['results']);
+        if (bollywoodLatest.isNotEmpty) heroBanners = bollywoodLatest.take(6).toList();
+      }
 
-      try {
-        final hindiTvRes = await http.get(Uri.parse(
-            '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&without_genres=10766&sort_by=vote_count.desc&vote_count.gte=10')).timeout(const Duration(seconds: 8));
-        if (hindiTvRes.statusCode == 200) {
-          final rawList = jsonDecode(hindiTvRes.body)['results'] ?? [];
-          hindiWebSeries = _parseResults(rawList, isTv: true)
-              .where((item) => !isDailySoapTitle(item['title'] ?? ''))
-              .toList();
-        }
-      } catch (_) {}
+      final hindiTvRes = await http.get(Uri.parse(
+          '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&without_genres=10766&sort_by=vote_count.desc&vote_count.gte=10')).timeout(const Duration(seconds: 8));
+      if (hindiTvRes.statusCode == 200) {
+        final rawList = jsonDecode(hindiTvRes.body)['results'] ?? [];
+        hindiWebSeries = _parseResults(rawList, isTv: true)
+            .where((item) => !isDailySoapTitle(item['title'] ?? ''))
+            .toList();
+      }
 
-      try {
-        final hollyRes = await http.get(Uri.parse(
-            '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=100')).timeout(const Duration(seconds: 8));
-        if (hollyRes.statusCode == 200) {
-          hollywoodHindiDubbed = _parseResults(jsonDecode(hollyRes.body)['results']);
-        }
-      } catch (_) {}
+      final hollyRes = await http.get(Uri.parse(
+          '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=100')).timeout(const Duration(seconds: 8));
+      if (hollyRes.statusCode == 200) {
+        hollywoodHindiDubbed = _parseResults(jsonDecode(hollyRes.body)['results']);
+      }
 
-      try {
-        final southRes = await http.get(Uri.parse(
-            '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te%7Cta%7Cml%7Ckn&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
-        if (southRes.statusCode == 200) {
-          southHindiDubbed = _parseResults(jsonDecode(southRes.body)['results']);
-        }
-      } catch (_) {}
+      final southRes = await http.get(Uri.parse(
+          '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te%7Cta%7Cml%7Ckn&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
+      if (southRes.statusCode == 200) {
+        southHindiDubbed = _parseResults(jsonDecode(southRes.body)['results']);
+      }
 
-      try {
-        final hollySeriesRes = await http.get(Uri.parse(
-            '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=30')).timeout(const Duration(seconds: 8));
-        if (hollySeriesRes.statusCode == 200) {
-          hollywoodHindiSeries = _parseResults(jsonDecode(hollySeriesRes.body)['results'], isTv: true);
-        }
-      } catch (_) {}
+      final netflixRes = await http.get(Uri.parse(
+          '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=213&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
+      if (netflixRes.statusCode == 200) {
+        netflixSeries = _parseResults(jsonDecode(netflixRes.body)['results'], isTv: true);
+      }
 
-      try {
-        final netflixRes = await http.get(Uri.parse(
-            '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=213&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
-        if (netflixRes.statusCode == 200) {
-          netflixSeries = _parseResults(jsonDecode(netflixRes.body)['results'], isTv: true);
-        }
-      } catch (_) {}
-
-      try {
-        final amazonRes = await http.get(Uri.parse(
-            '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=1024&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
-        if (amazonRes.statusCode == 200) {
-          amazonSeries = _parseResults(jsonDecode(amazonRes.body)['results'], isTv: true);
-        }
-      } catch (_) {}
+      final amazonRes = await http.get(Uri.parse(
+          '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=1024&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
+      if (amazonRes.statusCode == 200) {
+        amazonSeries = _parseResults(jsonDecode(amazonRes.body)['results'], isTv: true);
+      }
     } catch (_) {}
   }
 
   Future<List> _fetchMultiPages(String urlTemplate, {bool isTv = false}) async {
     List collected = [];
-    for (int p = 1; p <= 10; p++) {
+    for (int p = 1; p <= 5; p++) {
       try {
         final res = await http.get(Uri.parse('$urlTemplate&page=$p')).timeout(const Duration(seconds: 5));
         if (res.statusCode == 200) {
@@ -316,670 +293,28 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     }
   }
 
-  void _openSportsListSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF16181F),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return FutureBuilder(
-          future: MobileStreamService.getSportsChannels(activeProviders),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const SizedBox(
-                height: 250,
-                child: Center(
-                  child: CircularProgressIndicator(color: Color(0xFF0072D2)),
-                ),
-              );
-            }
+  // Provider Click Catalog Handler
+  void _openProviderCatalog(String providerName) {
+    List targetList = [];
 
-            final channels = (snapshot.data is List) ? (snapshot.data as List) : [];
-            if (channels.isEmpty) {
-              return const SizedBox(
-                height: 200,
-                child: Center(
-                  child: Text('Live Sports Server Offline / No Channels Found',
-                      style: TextStyle(color: Colors.white70)),
-                ),
-              );
-            }
-
-            return Container(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              height: MediaQuery.of(context).size.height * 0.65,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    child: Text(
-                      'Live Sports & Cricket Channels',
-                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const Divider(color: Colors.white12),
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: channels.length,
-                      separatorBuilder: (_, __) => const Divider(color: Colors.white10),
-                      itemBuilder: (context, index) {
-                        final ch = channels[index];
-                        final isHindi = ch['isHindi'] == true;
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: const Color(0xFF222222),
-                            child: Icon(
-                              Icons.tv,
-                              color: isHindi ? const Color(0xFF10B981) : const Color(0xFF0072D2),
-                            ),
-                          ),
-                          title: Text(ch['name'] ?? 'Sports Channel', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                          subtitle: Text(
-                            isHindi ? 'Hindi Live Audio' : 'Live Stream',
-                            style: TextStyle(color: isHindi ? const Color(0xFF10B981) : Colors.white38, fontSize: 12),
-                          ),
-                          trailing: const Icon(Icons.play_circle_fill, color: Color(0xFF0072D2), size: 28),
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            _playLiveChannel(ch);
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildCategoryTabs() {
-    final tabs = ['Recommend', 'Movies', 'TV Shows', '18+'];
-    return Container(
-      height: 40,
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        itemCount: tabs.length,
-        itemBuilder: (ctx, i) {
-          final tab = tabs[i];
-          final isSelected = _selectedTab == tab;
-          return GestureDetector(
-            onTap: () {
-              setState(() {
-                _selectedTab = tab;
-              });
-            },
-            child: Container(
-              alignment: Alignment.center,
-              margin: const EdgeInsets.only(right: 18),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    tab,
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : Colors.white54,
-                      fontSize: 15,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  if (isSelected)
-                    Container(
-                      height: 2,
-                      width: 24,
-                      color: const Color(0xFF0072D2),
-                    ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildStreamingProvidersRow() {
-    final providers = [
-      {'name': 'Netflix', 'color': const Color(0xFFE50914)},
-      {'name': 'JioHotstar', 'color': const Color(0xFF0072D2)},
-      {'name': 'Prime Video', 'color': const Color(0xFF00A8E1)},
-      {'name': 'ZEE5', 'color': const Color(0xFF8C1159)},
-    ];
-
-    return Container(
-      height: 60,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        itemCount: providers.length,
-        itemBuilder: (ctx, i) {
-          final p = providers[i];
-          return Container(
-            width: 110,
-            margin: const EdgeInsets.only(right: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFF16181F),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white12),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              p['name'] as String,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildTopFeaturedCarousel() {
-    final List<Widget> slides = [];
-
-    if (topLiveChannel != null) {
-      final chName = topLiveChannel['name'] ?? 'Live Match Broadcast';
-      final isHindi = topLiveChannel['isHindi'] == true;
-
-      slides.add(
-        GestureDetector(
-          onTap: () => _playLiveChannel(topLiveChannel),
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              gradient: const LinearGradient(
-                colors: [Color(0xFF0B192C), Color(0xFF1E3E62)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF0072D2).withOpacity(0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Positioned(
-                  right: -20,
-                  bottom: -20,
-                  child: Icon(
-                    Icons.sports_cricket_rounded,
-                    size: 160,
-                    color: Colors.white.withOpacity(0.08),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE50914),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                CircleAvatar(radius: 3, backgroundColor: Colors.white),
-                                SizedBox(width: 5),
-                                Text(
-                                  'LIVE',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 0.8,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (isHindi) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF10B981).withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: const Color(0xFF10B981), width: 0.8),
-                              ),
-                              child: const Text(
-                                'Hindi Feed',
-                                style: TextStyle(
-                                  color: Color(0xFF10B981),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text(
-                                  'WATCH LIVE MATCH',
-                                  style: TextStyle(
-                                    color: Color(0xFF38BDF8),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  chName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF0072D2), Color(0xFF00529B)],
-                              ),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.play_arrow_rounded, color: Colors.white, size: 20),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Play',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    for (var m in heroBanners) {
-      slides.add(
-        GestureDetector(
-          onTap: () => _onItemTapped(m),
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              color: const Color(0xFF1E2029),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.network(
-                    m['backdrop'],
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(color: const Color(0xFF1E2029)),
-                  ),
-                  Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black45,
-                          Colors.black87,
-                        ],
-                        stops: [0.3, 0.65, 1.0],
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.white24),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
-                              const SizedBox(width: 4),
-                              Text(
-                                m['rating'] ?? '7.8',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                m['title'] ?? '',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.play_arrow_rounded, color: Colors.black, size: 20),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    'Watch',
-                                    style: TextStyle(
-                                      color: Colors.black,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (slides.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          height: 195,
-          child: PageView(
-            controller: _bannerController,
-            onPageChanged: (i) => setState(() => _currentBannerIndex = i),
-            children: slides,
-          ),
-        ),
-        if (slides.length > 1)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(
-              slides.length,
-              (index) => AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
-                width: _currentBannerIndex == index ? 16 : 6,
-                height: 4,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(2),
-                  color: _currentBannerIndex == index
-                      ? const Color(0xFF0072D2)
-                      : Colors.white24,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildAppDrawer() {
-    return Drawer(
-      backgroundColor: const Color(0xFF07080B),
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          DrawerHeader(
-            decoration: const BoxDecoration(color: Color(0xFF0F1014)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF0072D2), Color(0xFF001B44)],
-                    ),
-                    border: Border.all(color: const Color(0xFF38BDF8), width: 1.5),
-                  ),
-                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 30),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'CINEMA TV HQ',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),
-                ),
-              ],
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.sports_cricket, color: Color(0xFF38BDF8)),
-            title: const Text('Live Sports & Cricket', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            subtitle: const Text('Star Sports, Sony Ten & Matches', style: TextStyle(color: Colors.white54, fontSize: 11)),
-            onTap: () {
-              Navigator.pop(context);
-              _openSportsListSheet();
-            },
-          ),
-          const Divider(color: Colors.white12),
-          ListTile(
-            leading: const Icon(Icons.movie_filter_rounded, color: Color(0xFF38BDF8)),
-            title: const Text('Bollywood Movies', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            onTap: () {
-              Navigator.pop(context);
-              _openCategoryPage('bollywood', 'Bollywood Movies');
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.local_movies_rounded, color: Color(0xFF38BDF8)),
-            title: const Text('South Indian (Hindi Dubbed)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            onTap: () {
-              Navigator.pop(context);
-              _openCategoryPage('south', 'South Indian Movies');
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.theaters_rounded, color: Color(0xFF38BDF8)),
-            title: const Text('Hollywood Movies (Hindi Dubbed)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            onTap: () {
-              Navigator.pop(context);
-              _openCategoryPage('hollywood_movies', 'Hollywood Movies');
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.live_tv_rounded, color: Color(0xFF38BDF8)),
-            title: const Text('Hindi Web Series', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            onTap: () {
-              Navigator.pop(context);
-              _openCategoryPage('hindi_series', 'Hindi Web Series');
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.connected_tv_rounded, color: Color(0xFF38BDF8)),
-            title: const Text('English Web Series', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            onTap: () {
-              Navigator.pop(context);
-              _openCategoryPage('english_series', 'English Web Series');
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _openCategoryPage(String type, String title) {
-    List initialList = [];
-    if (type == 'bollywood') {
-      initialList = allBollywood200.isNotEmpty ? allBollywood200 : bollywoodLatest;
-    } else if (type == 'south') {
-      initialList = allSouth200.isNotEmpty ? allSouth200 : southHindiDubbed;
-    } else if (type == 'hollywood_movies') {
-      initialList = allHollywood200.isNotEmpty ? allHollywood200 : hollywoodHindiDubbed;
-    } else if (type == 'hindi_series') {
-      initialList = allHindiSeries200.isNotEmpty ? allHindiSeries200 : hindiWebSeries;
-    } else if (type == 'english_series') {
-      initialList = allEnglishSeries200.isNotEmpty ? allEnglishSeries200 : hollywoodHindiSeries;
+    if (providerName == 'Netflix') {
+      targetList = netflixSeries.isNotEmpty ? netflixSeries : allEnglishSeries200;
+    } else if (providerName == 'Prime Video') {
+      targetList = amazonSeries.isNotEmpty ? amazonSeries : allHollywood200;
+    } else if (providerName == 'JioHotstar') {
+      targetList = hindiWebSeries.isNotEmpty ? hindiWebSeries : allHindiSeries200;
+    } else {
+      targetList = allBollywood200;
     }
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => _MobileCategoryGridScreen(
-          title: title,
-          rawItems: initialList,
+          title: '$providerName Catalog',
+          rawItems: targetList,
           onItemTapped: _onItemTapped,
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      child: Text(
-        title,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHorizontalRow(dynamic items) {
-    final list = items is List ? items : [];
-    return SizedBox(
-      height: 120,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        itemCount: list.length,
-        itemBuilder: (ctx, i) {
-          final item = list[i];
-          return GestureDetector(
-            onTap: () => _onItemTapped(item),
-            child: Container(
-              width: 175,
-              margin: const EdgeInsets.only(right: 12),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                color: const Color(0xFF1E2029),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.network(
-                      item['backdrop'],
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          Container(color: const Color(0xFF1E2029)),
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        color: Colors.black87,
-                        child: Text(
-                          item['title'],
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
       ),
     );
   }
@@ -989,45 +324,20 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: const Color(0xFF0F1014),
-      drawer: _buildAppDrawer(),
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(60),
         child: AppBar(
-          backgroundColor: const Color(0xFF0F1014).withOpacity(0.95),
+          backgroundColor: const Color(0xFF0F1014),
           elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.menu_rounded, color: Colors.white, size: 28),
-            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-          ),
-          title: Row(
-            children: [
-              const Text(
-                'CINEMA ',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 20,
-                  color: Colors.white,
-                  letterSpacing: 1.2,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF0072D2), Color(0xFF00458E)],
-                  ),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'HQ',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 12,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ],
+          automaticallyImplyLeading: false,
+          title: const Text(
+            'Primeflix',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 22,
+              color: Colors.white,
+              letterSpacing: 0.8,
+            ),
           ),
           actions: [
             IconButton(
@@ -1043,60 +353,24 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         ),
       ),
       body: isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFF0072D2)),
-            )
-          : RefreshIndicator(
-              color: const Color(0xFF0072D2),
-              backgroundColor: const Color(0xFF16181F),
-              onRefresh: _loadAllData,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildCategoryTabs(),
-                    const SizedBox(height: 4),
-                    _buildTopFeaturedCarousel(),
-                    const SizedBox(height: 6),
-                    _buildStreamingProvidersRow(),
-                    const SizedBox(height: 8),
-
-                    if (continueWatchingList.isNotEmpty) ...[
-                      _buildHeader('Continue Watching'),
-                      _buildHorizontalRow(continueWatchingList),
-                      const SizedBox(height: 12),
-                    ],
-
-                    _buildHeader('Bollywood Latest Movies'),
-                    _buildHorizontalRow(bollywoodLatest),
-                    const SizedBox(height: 12),
-
-                    _buildHeader('Hollywood Movies (Hindi Dubbed)'),
-                    _buildHorizontalRow(hollywoodHindiDubbed),
-                    const SizedBox(height: 12),
-
-                    _buildHeader('Hindi Web Series'),
-                    _buildHorizontalRow(hindiWebSeries),
-                    const SizedBox(height: 12),
-
-                    _buildHeader('South Indian Movies (Hindi Dubbed)'),
-                    _buildHorizontalRow(southHindiDubbed),
-                    const SizedBox(height: 12),
-
-                    _buildHeader('Netflix Originals'),
-                    _buildHorizontalRow(netflixSeries),
-                    const SizedBox(height: 12),
-
-                    _buildHeader('Amazon Prime Series'),
-                    _buildHorizontalRow(amazonSeries),
-                    const SizedBox(height: 12),
-
-                    _buildHeader('Hollywood English Series'),
-                    _buildHorizontalRow(hollywoodHindiSeries),
-                    const SizedBox(height: 24),
-                  ],
-                ),
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF0072D2)))
+          : SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Colorful Gradient Streaming Providers Row
+                  _buildStreamingProvidersRow(),
+                  const SizedBox(height: 12),
+                  // Bollywood Latest Section
+                  _buildHorizontalMovieList('Bollywood Latest Movies', bollywoodLatest),
+                  const SizedBox(height: 16),
+                  // Hollywood Dubbed Section
+                  _buildHorizontalMovieList('Hollywood Movies (Hindi Dubbed)', hollywoodHindiDubbed),
+                  const SizedBox(height: 16),
+                  // Hindi Web Series Section
+                  _buildHorizontalMovieList('Hindi Web Series', hindiWebSeries),
+                  const SizedBox(height: 24),
+                ],
               ),
             ),
       bottomNavigationBar: BottomNavigationBar(
@@ -1106,9 +380,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         unselectedItemColor: Colors.white54,
         currentIndex: 0,
         onTap: (index) {
-          if (index == 1) {
-            _scaffoldKey.currentState?.openDrawer();
-          } else if (index == 2) {
+          if (index == 3) {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const MyListScreen()),
@@ -1121,8 +393,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
             label: 'Home',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.menu_rounded),
-            label: 'Menu',
+            icon: Icon(Icons.sort_rounded),
+            label: 'Sort',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.local_fire_department_rounded),
+            label: 'Ranking',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.bookmark_added_rounded),
@@ -1132,9 +408,146 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       ),
     );
   }
+
+  Widget _buildStreamingProvidersRow() {
+    final providers = [
+      {
+        'name': 'Netflix',
+        'colors': [const Color(0xFFE50914), const Color(0xFF83050C)],
+      },
+      {
+        'name': 'JioHotstar',
+        'colors': [const Color(0xFF0072D2), const Color(0xFF0A2540)],
+      },
+      {
+        'name': 'Prime Video',
+        'colors': [const Color(0xFF00A8E1), const Color(0xFF003F63)],
+      },
+      {
+        'name': 'ZEE5',
+        'colors': [const Color(0xFF8C1159), const Color(0xFF450529)],
+      },
+      {
+        'name': 'SonyLIV',
+        'colors': [const Color(0xFFFC4C02), const Color(0xFF802201)],
+      },
+    ];
+
+    return Container(
+      height: 65,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        itemCount: providers.length,
+        itemBuilder: (ctx, i) {
+          final p = providers[i];
+          final colors = p['colors'] as List<Color>;
+          final providerName = p['name'] as String;
+
+          return GestureDetector(
+            onTap: () => _openProviderCatalog(providerName),
+            child: Container(
+              width: 120,
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: colors,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: colors[0].withOpacity(0.4),
+                    blurRadius: 6,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                providerName,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildHorizontalMovieList(String title, List items) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 160,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: items.length,
+            itemBuilder: (ctx, index) {
+              final item = items[index];
+              return GestureDetector(
+                onTap: () => _onItemTapped(item),
+                child: Container(
+                  width: 110,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            item['poster'] ?? '',
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.grey[850],
+                              child: const Icon(Icons.broken_image, color: Colors.white24),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        item['title'] ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
 }
 
-class _MobileCategoryGridScreen extends StatefulWidget {
+class _MobileCategoryGridScreen extends StatelessWidget {
   final String title;
   final List rawItems;
   final Function(dynamic) onItemTapped;
@@ -1146,85 +559,21 @@ class _MobileCategoryGridScreen extends StatefulWidget {
   });
 
   @override
-  State<_MobileCategoryGridScreen> createState() => _MobileCategoryGridScreenState();
-}
-
-class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
-  late List _items;
-  bool _isLatest = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _items = List.from(widget.rawItems);
-    _applySort();
-  }
-
-  void _applySort() {
-    if (_isLatest) {
-      _items.sort((a, b) {
-        final yearA = int.tryParse(a['year']?.toString() ?? '0') ?? 0;
-        final yearB = int.tryParse(b['year']?.toString() ?? '0') ?? 0;
-        return yearB.compareTo(yearA);
-      });
-    } else {
-      _items.sort((a, b) {
-        final rateA = double.tryParse(a['rating']?.toString() ?? '0') ?? 0.0;
-        final rateB = double.tryParse(b['rating']?.toString() ?? '0') ?? 0.0;
-        return rateB.compareTo(rateA);
-      });
-    }
-  }
-
-  void _toggleFilter() {
-    setState(() {
-      _isLatest = !_isLatest;
-      _applySort();
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0F1014),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0F1014),
-        elevation: 0,
-        title: Text(
-          widget.title,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12, top: 10, bottom: 10),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(20),
-              onTap: _toggleFilter,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E222D),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFF0072D2), width: 1.2),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.swap_vert_rounded, size: 16, color: Color(0xFF38BDF8)),
-                    const SizedBox(width: 4),
-                    Text(
-                      _isLatest ? 'Latest' : 'Popular',
-                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
+        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 18)),
+        backgroundColor: const Color(0xFF16181F),
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: _items.isEmpty
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF0072D2)))
+      body: rawItems.isEmpty
+          ? const Center(
+              child: Text(
+                'No items found in this catalog.',
+                style: TextStyle(color: Colors.white70),
+              ),
+            )
           : GridView.builder(
               padding: const EdgeInsets.all(12),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -1233,34 +582,40 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
                 crossAxisSpacing: 10,
                 mainAxisSpacing: 10,
               ),
-              itemCount: _items.length,
-              itemBuilder: (ctx, i) {
-                final item = _items[i];
+              itemCount: rawItems.length,
+              itemBuilder: (ctx, index) {
+                final item = rawItems[index];
                 return GestureDetector(
-                  onTap: () => widget.onItemTapped(item),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Stack(
-                      fit: StackFit.expand,
+                  onTap: () => onItemTapped(item),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey[900],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Image.network(
-                          item['poster'] ?? item['backdrop'] ?? '',
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(color: const Color(0xFF1E2029)),
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            color: Colors.black87,
-                            child: Text(
-                              item['title'] ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                            child: Image.network(
+                              item['poster'] ?? '',
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: Colors.grey[850],
+                                child: const Icon(Icons.broken_image, color: Colors.white24),
+                              ),
                             ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(6.0),
+                          child: Text(
+                            item['title'] ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white, fontSize: 11),
                           ),
                         ),
                       ],
