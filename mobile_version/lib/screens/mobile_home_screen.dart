@@ -26,22 +26,15 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   var heroBanners = [];
   var bollywoodLatest = [];
   var hollywoodHindiDubbed = [];
-  var southHindiDubbed = [];
   var hindiWebSeries = [];
-  var hollywoodHindiSeries = [];
-  var netflixSeries = [];
-  var amazonSeries = [];
 
-  // Deep Catalogs (200+ Titles each)
+  // Deep Catalogs (Lazy loaded in background)
   List allBollywood200 = [];
-  List allSouth200 = [];
   List allHollywood200 = [];
   List allHindiSeries200 = [];
   List allEnglishSeries200 = [];
 
-  // Live Sports Banner State
-  dynamic topLiveChannel;
-  bool isLiveSportsLoading = true;
+  String _selectedTab = 'Recommend';
 
   // Banner Carousel Controller
   final PageController _bannerController = PageController();
@@ -53,7 +46,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAllData();
+    _loadFastInitialData();
   }
 
   @override
@@ -66,7 +59,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   void _startCarouselTimer(int totalSlides) {
     _carouselTimer?.cancel();
     if (totalSlides <= 1) return;
-    _carouselTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+    _carouselTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
       if (_bannerController.hasClients) {
         int nextPage = _currentBannerIndex + 1;
         if (nextPage >= totalSlides) nextPage = 0;
@@ -79,41 +72,23 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     });
   }
 
-  Future _loadAllData() async {
-    await _fetchProviders();
-    await _loadContinueWatching();
-    await _fetchTmdbContent();
-    await _fetchTopLiveChannel();
+  // --- FAST INITIAL LOAD (Instant UI Rendering) ---
+  Future _loadFastInitialData() async {
+    // 1. Load local cache / providers / main banner data concurrently for ultra-fast startup
+    await Future.wait([
+      _fetchProviders(),
+      _loadContinueWatching(),
+      _fetchMainHomeContent(),
+    ]);
 
     if (mounted) {
       setState(() => isLoading = false);
-      final total = (topLiveChannel != null ? 1 : 0) + heroBanners.length;
+      final total = heroBanners.isNotEmpty ? heroBanners.length : 1;
       _startCarouselTimer(total);
     }
 
-    _fetchDeepCatalogs();
-  }
-
-  Future _fetchTopLiveChannel() async {
-    try {
-      final channels = await MobileStreamService.getSportsChannels(activeProviders);
-      if (channels is List && channels.isNotEmpty) {
-        final hindi = channels.firstWhere(
-          (c) => c['isHindi'] == true,
-          orElse: () => channels.first,
-        );
-        if (mounted) {
-          setState(() {
-            topLiveChannel = hindi;
-            isLiveSportsLoading = false;
-          });
-        }
-      } else {
-        if (mounted) setState(() => isLiveSportsLoading = false);
-      }
-    } catch (_) {
-      if (mounted) setState(() => isLiveSportsLoading = false);
-    }
+    // 2. Load heavy deep catalogs silently in background so UI is never blocked
+    _fetchDeepCatalogsInBackground();
   }
 
   Future _loadContinueWatching() async {
@@ -131,7 +106,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
   Future _fetchProviders() async {
     try {
-      final res = await http.get(Uri.parse(AppConfig.gistUrl)).timeout(const Duration(seconds: 6));
+      final res = await http.get(Uri.parse(MobileStreamService.gistUrl)).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         activeProviders = data['active_providers'] ?? [];
@@ -139,95 +114,50 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     } catch (_) {}
   }
 
-  Future _fetchTmdbContent() async {
+  // Fetch only essential above-the-fold content first for instant loading
+  Future _fetchMainHomeContent() async {
     try {
-      final bollyRes = await http.get(Uri.parse(
-          '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=10')).timeout(const Duration(seconds: 8));
-      if (bollyRes.statusCode == 200) {
-        bollywoodLatest = _parseResults(jsonDecode(bollyRes.body)['results']);
-        if (bollywoodLatest.isNotEmpty) heroBanners = bollywoodLatest.take(6).toList();
+      final responses = await Future.wait([
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=10')).timeout(const Duration(seconds: 5)),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&without_genres=10766&sort_by=vote_count.desc&vote_count.gte=10')).timeout(const Duration(seconds: 5)),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=100')).timeout(const Duration(seconds: 5)),
+      ]);
+
+      // Parse Bollywood Latest & Banners
+      if (responses[0].statusCode == 200) {
+        bollywoodLatest = _parseResults(jsonDecode(responses[0].body)['results']);
+        if (bollywoodLatest.isNotEmpty) {
+          heroBanners = bollywoodLatest.take(6).toList();
+        }
       }
 
-      final hindiTvRes = await http.get(Uri.parse(
-          '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&without_genres=10766&sort_by=vote_count.desc&vote_count.gte=10')).timeout(const Duration(seconds: 8));
-      if (hindiTvRes.statusCode == 200) {
-        final rawList = jsonDecode(hindiTvRes.body)['results'] ?? [];
+      // Parse Hindi Web Series
+      if (responses[1].statusCode == 200) {
+        final rawList = jsonDecode(responses[1].body)['results'] ?? [];
         hindiWebSeries = _parseResults(rawList, isTv: true)
             .where((item) => !isDailySoapTitle(item['title'] ?? ''))
             .toList();
       }
 
-      final hollyRes = await http.get(Uri.parse(
-          '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=100')).timeout(const Duration(seconds: 8));
-      if (hollyRes.statusCode == 200) {
-        hollywoodHindiDubbed = _parseResults(jsonDecode(hollyRes.body)['results']);
-      }
-
-      final southRes = await http.get(Uri.parse(
-          '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te%7Cta%7Cml%7Ckn&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
-      if (southRes.statusCode == 200) {
-        southHindiDubbed = _parseResults(jsonDecode(southRes.body)['results']);
-      }
-
-      final netflixRes = await http.get(Uri.parse(
-          '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=213&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
-      if (netflixRes.statusCode == 200) {
-        netflixSeries = _parseResults(jsonDecode(netflixRes.body)['results'], isTv: true);
-      }
-
-      final amazonRes = await http.get(Uri.parse(
-          '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=1024&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
-      if (amazonRes.statusCode == 200) {
-        amazonSeries = _parseResults(jsonDecode(amazonRes.body)['results'], isTv: true);
+      // Parse Hollywood Dubbed
+      if (responses[2].statusCode == 200) {
+        hollywoodHindiDubbed = _parseResults(jsonDecode(responses[2].body)['results']);
       }
     } catch (_) {}
   }
 
-  Future<List> _fetchMultiPages(String urlTemplate, {bool isTv = false}) async {
-    List collected = [];
-    for (int p = 1; p <= 5; p++) {
-      try {
-        final res = await http.get(Uri.parse('$urlTemplate&page=$p')).timeout(const Duration(seconds: 5));
-        if (res.statusCode == 200) {
-          final results = jsonDecode(res.body)['results'];
-          if (results is List && results.isNotEmpty) {
-            collected.addAll(_parseResults(results, isTv: isTv));
-          } else {
-            break;
-          }
-        }
-      } catch (_) {}
-    }
-    return collected;
-  }
-
-  void _fetchDeepCatalogs() async {
-    _fetchMultiPages('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=10')
-        .then((list) {
-      if (list.isNotEmpty && mounted) setState(() => allBollywood200 = list);
-    });
-
-    _fetchMultiPages('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te%7Cta%7Cml%7Ckn&sort_by=popularity.desc&vote_count.gte=15')
-        .then((list) {
-      if (list.isNotEmpty && mounted) setState(() => allSouth200 = list);
-    });
-
-    _fetchMultiPages('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=50')
-        .then((list) {
-      if (list.isNotEmpty && mounted) setState(() => allHollywood200 = list);
-    });
-
-    _fetchMultiPages('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&without_genres=10766&sort_by=vote_count.desc&vote_count.gte=8', isTv: true)
-        .then((list) {
-      if (list.isNotEmpty && mounted) {
-        setState(() => allHindiSeries200 = list.where((i) => !isDailySoapTitle(i['title'] ?? '')).toList());
+  void _fetchDeepCatalogsInBackground() async {
+    try {
+      final bollyRes = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=10&page=1')).timeout(const Duration(seconds: 5));
+      if (bollyRes.statusCode == 200 && mounted) {
+        setState(() => allBollywood200 = _parseResults(jsonDecode(bollyRes.body)['results']));
       }
-    });
 
-    _fetchMultiPages('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=vote_count.desc&vote_count.gte=30', isTv: true)
-        .then((list) {
-      if (list.isNotEmpty && mounted) setState(() => allEnglishSeries200 = list);
-    });
+      final hollyRes = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=50&page=1')).timeout(const Duration(seconds: 5));
+      if (hollyRes.statusCode == 200 && mounted) {
+        setState(() => allHollywood200 = _parseResults(jsonDecode(hollyRes.body)['results']));
+      }
+    } catch (_) {}
   }
 
   dynamic _parseResults(dynamic list, {bool isTv = false}) {
@@ -278,33 +208,14 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  void _playLiveChannel(dynamic channel) async {
-    final playUrl = await MobileStreamService.getLiveChannelUrl(channel);
-    if (playUrl != null && playUrl.toString().isNotEmpty && mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => InternalPlayerScreen(
-            videoUrl: playUrl.toString(),
-            title: channel['name'] ?? 'Live Sports Broadcast',
-          ),
-        ),
-      );
-    }
-  }
-
-  // Provider Click Catalog Handler
   void _openProviderCatalog(String providerName) {
-    List targetList = [];
-
+    List targetList = allBollywood200.isNotEmpty ? allBollywood200 : bollywoodLatest;
     if (providerName == 'Netflix') {
-      targetList = netflixSeries.isNotEmpty ? netflixSeries : allEnglishSeries200;
+      targetList = allEnglishSeries200.isNotEmpty ? allEnglishSeries200 : bollywoodLatest;
     } else if (providerName == 'Prime Video') {
-      targetList = amazonSeries.isNotEmpty ? amazonSeries : allHollywood200;
+      targetList = allHollywood200.isNotEmpty ? allHollywood200 : bollywoodLatest;
     } else if (providerName == 'JioHotstar') {
-      targetList = hindiWebSeries.isNotEmpty ? hindiWebSeries : allHindiSeries200;
-    } else {
-      targetList = allBollywood200;
+      targetList = allHindiSeries200.isNotEmpty ? allHindiSeries200 : hindiWebSeries;
     }
 
     Navigator.push(
@@ -358,16 +269,35 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Colorful Gradient Streaming Providers Row
-                  _buildStreamingProvidersRow(),
-                  const SizedBox(height: 12),
-                  // Bollywood Latest Section
-                  _buildHorizontalMovieList('Bollywood Latest Movies', bollywoodLatest),
+                  // 1. Top Category Tabs ('Recommend', 'Movies', 'TV Shows', '18+')[span_0](start_span)[span_0](end_span)
+                  _buildCategoryTabs(),
+                  const SizedBox(height: 6),
+                  
+                  // 2. Sliding Featured Banner Carousel[span_1](start_span)[span_1](end_span)
+                  _buildTopFeaturedCarousel(),
                   const SizedBox(height: 16),
-                  // Hollywood Dubbed Section
+
+                  // 3. Streaming Section Title & Providers Row[span_2](start_span)[span_2](end_span)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'Streaming',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildStreamingProvidersRow(),
+                  const SizedBox(height: 16),
+
+                  // 4. Content Rows (Trending Now / Bollywood Latest, etc.)[span_3](start_span)[span_3](end_span)
+                  _buildHorizontalMovieList('Trending Now', bollywoodLatest),
+                  const SizedBox(height: 16),
                   _buildHorizontalMovieList('Hollywood Movies (Hindi Dubbed)', hollywoodHindiDubbed),
                   const SizedBox(height: 16),
-                  // Hindi Web Series Section
                   _buildHorizontalMovieList('Hindi Web Series', hindiWebSeries),
                   const SizedBox(height: 24),
                 ],
@@ -409,57 +339,138 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
+  Widget _buildCategoryTabs() {
+    final tabs = ['Recommend', 'Movies', 'TV Shows', '18+'];
+    return Container(
+      height: 40,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        itemCount: tabs.length,
+        itemBuilder: (ctx, i) {
+          final tab = tabs[i];
+          final isSelected = _selectedTab == tab;
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _selectedTab = tab;
+              });
+            },
+            child: Container(
+              alignment: Alignment.center,
+              margin: const EdgeInsets.only(right: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    tab,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.white54,
+                      fontSize: 15,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  if (isSelected)
+                    Container(
+                      height: 2,
+                      width: 22,
+                      color: const Color(0xFF0072D2),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTopFeaturedCarousel() {
+    if (heroBanners.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 210,
+      child: PageView.builder(
+        controller: _bannerController,
+        onPageChanged: (index) {
+          setState(() {
+            _currentBannerIndex = index;
+          });
+        },
+        itemCount: heroBanners.length,
+        itemBuilder: (context, index) {
+          final item = heroBanners[index];
+          return GestureDetector(
+            onTap: () => _onItemTapped(item),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                image: DecorationImage(
+                  image: NetworkImage(item['backdrop'] ?? ''),
+                  fit: BoxFit.cover,
+                ),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  gradient: LinearGradient(
+                    colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+                padding: const EdgeInsets.all(16),
+                alignment: Alignment.bottomCenter,
+                child: Text(
+                  item['title'] ?? '',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildStreamingProvidersRow() {
     final providers = [
-      {
-        'name': 'Netflix',
-        'colors': [const Color(0xFFE50914), const Color(0xFF83050C)],
-      },
-      {
-        'name': 'JioHotstar',
-        'colors': [const Color(0xFF0072D2), const Color(0xFF0A2540)],
-      },
-      {
-        'name': 'Prime Video',
-        'colors': [const Color(0xFF00A8E1), const Color(0xFF003F63)],
-      },
-      {
-        'name': 'ZEE5',
-        'colors': [const Color(0xFF8C1159), const Color(0xFF450529)],
-      },
-      {
-        'name': 'SonyLIV',
-        'colors': [const Color(0xFFFC4C02), const Color(0xFF802201)],
-      },
+      {'name': 'Netflix', 'color': const Color(0xFFE50914)},
+      {'name': 'JioHotstar', 'color': const Color(0xFF0072D2)},
+      {'name': 'Prime Video', 'color': const Color(0xFF00A8E1)},
+      {'name': 'ZEE5', 'color': const Color(0xFF8C1159)},
     ];
 
     return Container(
-      height: 65,
-      margin: const EdgeInsets.symmetric(vertical: 8),
+      height: 55,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         itemCount: providers.length,
         itemBuilder: (ctx, i) {
           final p = providers[i];
-          final colors = p['colors'] as List<Color>;
           final providerName = p['name'] as String;
+          final color = p['color'] as Color;
 
           return GestureDetector(
             onTap: () => _openProviderCatalog(providerName),
             child: Container(
-              width: 120,
+              width: 125,
               margin: const EdgeInsets.only(right: 10),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: colors,
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(12),
+                color: color,
+                borderRadius: BorderRadius.circular(10),
                 boxShadow: [
                   BoxShadow(
-                    color: colors[0].withOpacity(0.4),
+                    color: color.withOpacity(0.4),
                     blurRadius: 6,
                     offset: const Offset(0, 3),
                   ),
@@ -467,12 +478,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               ),
               alignment: Alignment.center,
               child: Text(
-                providerName,
+                providerName.toUpperCase(),
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
                   fontSize: 13,
-                  letterSpacing: 0.5,
+                  letterSpacing: 1.0,
                 ),
               ),
             ),
