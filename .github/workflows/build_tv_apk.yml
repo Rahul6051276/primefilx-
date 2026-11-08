@@ -1,17 +1,17 @@
-name: Build Android APK
+Name: Build Android APK
 
 on:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
-
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Set up Java
@@ -25,26 +25,41 @@ jobs:
         with:
           flutter-version: '3.16.x'
           channel: 'stable'
-          cache: false
+          cache: true
 
-      - name: Install Dependencies & Build APK
+      - name: Setup & Build Mobile App
         run: |
-          cd mobile_version
+          flutter create --org com.primeflix.app --project-name primeflix_mobile mobile_build_temp
+          cp -r mobile_version/lib mobile_build_temp/
+          cp mobile_version/pubspec.yaml mobile_build_temp/pubspec.yaml
+          
+          # Clean Mobile name
+          sed -i 's/android:label="[^"]*"/android:label="Primeflix"/' mobile_build_temp/android/app/src/main/AndroidManifest.xml
+          
+          # Internet & Cleartext HTTP fix
+          sed -i '/<application/i <uses-permission android:name="android.permission.INTERNET" />' mobile_build_temp/android/app/src/main/AndroidManifest.xml
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' mobile_build_temp/android/app/src/main/AndroidManifest.xml
+
+          cd mobile_build_temp
           flutter pub get
           flutter build apk --release
 
-      - name: Verify APK Existence
+      - name: Prepare APK for Release
         run: |
-          ls -lah mobile_version/build/app/outputs/flutter-apk/app-release.apk
+          mkdir -p release_apks
+          cp mobile_build_temp/build/app/outputs/flutter-apk/app-release.apk release_apks/Primeflix-Mobile.apk
 
-      - name: Create Release and Upload APK
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: Primeflix v1.0.${{ github.run_number }}
-          files: mobile_version/build/app/outputs/flutter-apk/app-release.apk
-          body: "Automated build for Primeflix streaming application with 200+ rich catalogs and IPTV filtered streams."
-          draft: false
-          prerelease: false
+          body: |
+            ## Primeflix Mobile v1.0.${{ github.run_number }}
+            * Optimized Home Screen with fast loading & 200+ catalogs
+            * IPTV & Xtream sources strictly filtered out
+            * Direct Cloud Streaming Engine
+          files: |
+            release_apks/Primeflix-Mobile.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
