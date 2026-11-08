@@ -27,14 +27,9 @@ jobs:
           channel: 'stable'
           cache: false
 
-      - name: Build APK without External Gradle Download
+      - name: Install Dependencies & Build APK
         run: |
           cd mobile_version
-          flutter create . --platforms=android
-          
-          # Remove gradle wrapper properties so it uses system gradle cleanly
-          rm -f android/gradle/wrapper/gradle-wrapper.properties
-          
           flutter pub get
           flutter build apk --release
 
@@ -48,7 +43,7 @@ jobs:
           tag_name: v1.0.${{ github.run_number }}
           name: Primeflix v1.0.${{ github.run_number }}
           files: mobile_version/build/app/outputs/flutter-apk/app-release.apk
-          body: "Automated build for Primeflix streaming application with 200+ rich catalogs and Web Series episode flow."
+          body: "Automated build for Primeflix streaming application with 200+ rich catalogs and IPTV filtered streams."
           draft: false
           prerelease: false
         env:
