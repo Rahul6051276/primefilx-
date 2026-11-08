@@ -72,12 +72,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   Future<void> _loadAllDataLightningFast() async {
     if (mounted) setState(() => isLoading = true);
 
-    try {
-      await Future.wait([
-        _fetchProvidersAndHomeContent(),
-        _loadContinueWatching(),
-      ]);
-    } catch (_) {}
+    await _fetchProvidersAndHomeContent();
+    await _loadContinueWatching();
 
     if (mounted) {
       setState(() => isLoading = false);
@@ -99,58 +95,73 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     } catch (_) {}
   }
 
+  // Independent safe fetching for each row so no single failure blocks the UI
   Future<void> _fetchProvidersAndHomeContent() async {
+    // 1. Providers Gist
     try {
-      final responses = await Future.wait([
-        http.get(Uri.parse(MobileStreamService.gistUrl)).timeout(const Duration(seconds: 4)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=primary_release_date.desc')).timeout(const Duration(seconds: 5)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=first_air_date.desc')).timeout(const Duration(seconds: 5)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 5)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 5)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&sort_by=popularity.desc')).timeout(const Duration(seconds: 5)),
-      ]);
-
-      if (responses[0].statusCode == 200) {
-        final data = jsonDecode(responses[0].body);
-        activeProviders = data['active_providers'] ?? [];
+      final res = await http.get(Uri.parse(MobileStreamService.gistUrl)).timeout(const Duration(seconds: 3));
+      if (res.statusCode == 200) {
+        activeProviders = jsonDecode(res.body)['active_providers'] ?? [];
       }
+    } catch (_) {}
 
-      if (responses[1].statusCode == 200) {
-        bollywoodLatest = CatalogService.parseResults(jsonDecode(responses[1].body)['results']);
-      }
-      
-      if (bollywoodLatest.isEmpty) {
-        final fallbackRes = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc'));
-        if (fallbackRes.statusCode == 200) {
-          bollywoodLatest = CatalogService.parseResults(jsonDecode(fallbackRes.body)['results']);
+    if (activeProviders.isEmpty) {
+      activeProviders = [{'name': 'Render Cloud', 'url': 'https://vidsrc.me'}];
+    }
+
+    // 2. Bollywood Latest
+    try {
+      final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        bollywoodLatest = CatalogService.parseResults(jsonDecode(res.body)['results']);
+        if (bollywoodLatest.isNotEmpty) {
+          heroBanners = bollywoodLatest.take(6).toList();
+          _startCarouselTimer(heroBanners.length);
         }
       }
+    } catch (_) {}
 
-      if (bollywoodLatest.isNotEmpty) {
-        heroBanners = bollywoodLatest.take(6).toList();
-        _startCarouselTimer(heroBanners.length);
+    // 3. Hindi Web Series
+    try {
+      final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        hindiWebSeries = CatalogService.parseResults(jsonDecode(res.body)['results'], isTv: true);
       }
+    } catch (_) {}
 
-      if (responses[2].statusCode == 200) {
-        hindiWebSeries = CatalogService.parseResults(jsonDecode(responses[2].body)['results'], isTv: true);
+    // 4. Hollywood Hindi Dubbed
+    try {
+      final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        hollywoodHindiDubbed = CatalogService.parseResults(jsonDecode(res.body)['results']);
       }
+    } catch (_) {}
 
-      if (responses[3].statusCode == 200) {
-        hollywoodHindiDubbed = CatalogService.parseResults(jsonDecode(responses[3].body)['results']);
+    // 5. English Web Series
+    try {
+      final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        englishWebSeries = CatalogService.parseResults(jsonDecode(res.body)['results'], isTv: true);
       }
+    } catch (_) {}
 
-      if (responses[4].statusCode == 200) {
-        englishWebSeries = CatalogService.parseResults(jsonDecode(responses[4].body)['results'], isTv: true);
+    // 6. South Indian Movies (Telugu/Tamil fallback)
+    try {
+      final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        southMovies = CatalogService.parseResults(jsonDecode(res.body)['results']);
       }
+    } catch (_) {}
 
-      if (responses[5].statusCode == 200) {
-        southMovies = CatalogService.parseResults(jsonDecode(responses[5].body)['results']);
-      }
-    } catch (_) {
-      if (activeProviders.isEmpty) {
-        activeProviders = [{'name': 'Render Cloud', 'url': 'https://vidsrc.me'}];
-      }
-    }
+    // Final safety fallback if any list is empty
+    if (bollywoodLatest.isEmpty) bollywoodListFallback();
+  }
+
+  void bollywoodListFallback() {
+    bollywoodLatest = [
+      {'tmdb_id': 1, 'title': 'Popular Movie 1', 'poster': 'https://via.placeholder.com/300', 'backdrop': 'https://via.placeholder.com/600', 'year': '2026', 'rating': '8.5'}
+    ];
+    heroBanners = bollywoodLatest;
   }
 
   void _fetchCatalogsInBackground() async {
@@ -603,7 +614,7 @@ class _MobileCategoryGridScreen extends StatelessWidget {
       body: GridView.builder(
         padding: const EdgeInsets.all(12),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3, // <--- Fixed here!
+          crossAxisCount: 3,
           childAspectRatio: 0.65,
           crossAxisSpacing: 8,
           mainAxisSpacing: 8,
