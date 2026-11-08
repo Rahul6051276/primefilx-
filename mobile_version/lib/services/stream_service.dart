@@ -68,16 +68,11 @@ class MobileStreamService {
     }
 
     // Sort by Hindi preference
-    resolved.sort((a, b) {
-      final aHindi = a['isHindi'] == true ? 1 : 0;
-      final bHindi = b['isHindi'] == true ? 1 : 0;
-      return bHindi.compareTo(aHindi);
-    });
+    resolved.sort((a, b) => (b['isHindi'] == true ? 1 : 0).compareTo(a['isHindi'] == true ? 1 : 0));
 
     return resolved;
   }
 
-  // Placeholder for sports/live if needed
   static Future getSportsChannels(dynamic providers) async {
     return [];
   }
