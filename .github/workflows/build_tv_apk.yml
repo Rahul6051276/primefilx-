@@ -1,4 +1,4 @@
-Name: Build Android APK
+name: Build Android APK
 
 on:
   workflow_dispatch:
@@ -30,7 +30,6 @@ jobs:
       - name: Prepare Clean Android Project
         run: |
           cd mobile_version
-          # Agar android folder nahi hai ya clean banana hai toh flutter create chala do
           flutter create . --platforms=android --org com.example.primefilx
 
       - name: Install Dependencies & Build APK
