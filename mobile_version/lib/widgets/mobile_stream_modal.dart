@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import '../services/stream_service.dart';
-import '../services/tmdb_service.dart'; // <--- Import added successfully
+import '../services/tmdb_service.dart';
 import '../internal_player.dart';
 
 class MobileQualitySelectorSheet extends StatefulWidget {
@@ -45,8 +45,20 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     );
 
     if (mounted) {
+      List rawList = results is List ? results : [];
+      
+      // Strict filter to remove any unwanted IPTV or Xtream sources completely
+      var filteredStreams = rawList.where((s) {
+        final title = (s['title'] ?? '').toString().toLowerCase();
+        final server = (s['server'] ?? '').toString().toLowerCase();
+        if (title.contains('iptv') || title.contains('xtream') || server.contains('iptv') || server.contains('xtream')) {
+          return false;
+        }
+        return true;
+      }).toList();
+
       setState(() {
-        streams = results is List ? results : [];
+        streams = filteredStreams;
         loading = false;
       });
     }
