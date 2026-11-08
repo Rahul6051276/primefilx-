@@ -1,4 +1,4 @@
-name: Build Primefilx Android APK
+name: Build Android APK
 
 on:
   workflow_dispatch:
@@ -27,31 +27,25 @@ jobs:
           channel: 'stable'
           cache: false
 
-      - name: Regenerate Android Folder to Fix Unsupported Gradle
+      - name: Prepare Clean Android Project
         run: |
           cd mobile_version
-          # Purana kharab android folder hata kar bilkul naya v2 compatible android folder bana lo
-          rm -rf android
-          flutter create . --platforms=android --org com.example
+          # Agar android folder nahi hai ya clean banana hai toh flutter create chala do
+          flutter create . --platforms=android --org com.example.primefilx
 
-      - name: Clean and Install Dependencies
+      - name: Install Dependencies & Build APK
         run: |
           cd mobile_version
-          flutter clean
           flutter pub get
-
-      - name: Build APK (Release)
-        run: |
-          cd mobile_version
           flutter build apk --release
 
       - name: Create Release and Upload APK
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: Primefilx Release v1.0.${{ github.run_number }}
+          name: App Release v1.0.${{ github.run_number }}
           files: mobile_version/build/app/outputs/flutter-apk/app-release.apk
-          body: "Automated manual build for Primefilx Android APK with fresh Gradle."
+          body: "Automated build without manual gradle files."
           draft: false
           prerelease: false
         env:
