@@ -3,6 +3,9 @@ import 'package:http/http.dart' as http;
 import 'tmdb_service.dart';
 
 class MobileStreamService {
+  // Permanent stable Gist raw URL for robust fallback & provider loading
+  static const String gistUrl = 'https://gist.githubusercontent.com/Rahul6051276/239654d65b2124bffd0ea21b5251dc02/raw/providers.json';
+
   static bool isHindiStream(String title, {String category = ''}) {
     final lower = '$title $category'.toLowerCase();
     return lower.contains('hindi') ||
@@ -20,7 +23,19 @@ class MobileStreamService {
         .trim();
   }
 
-  // --- RENDER TMDB EMBED API WITH GIST PROVIDERS SUPPORT ---
+  // --- FETCH ACTIVE PROVIDERS DIRECTLY FROM GIST ---
+  static Future<List> fetchProvidersFromGist() async {
+    try {
+      final res = await http.get(Uri.parse(gistUrl)).timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        return data['active_providers'] ?? [];
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  // --- RENDER TMDB EMBED API WITH GIST PROVIDERS & FALLBACK SUPPORT ---
   static Future getDirectStreams({
     required dynamic item,
     required dynamic providers,
@@ -34,6 +49,7 @@ class MobileStreamService {
     final targetSeason = season ?? 1;
     final targetEpisode = episode ?? 1;
 
+    // 1. Try fetching streams from Render TMDB Embed API
     if (targetTmdbId.isNotEmpty) {
       try {
         final embedType = isTv ? 'series' : 'movie';
@@ -67,15 +83,22 @@ class MobileStreamService {
       } catch (_) {}
     }
 
-    // Fallback if no streams found from Render API directly, check active providers list
-    if (resolved.isEmpty && providers is List && providers.isNotEmpty) {
-      for (var p in providers) {
-        resolved.add({
-          'server': p['name'] ?? 'Primeflix Server',
-          'title': '$movieTitle (Official Stream)',
-          'url': p['url'] ?? '',
-          'isHindi': true,
-        });
+    // 2. Fallback: If Render API doesn't return streams, load active providers dynamically
+    if (resolved.isEmpty) {
+      var activeProvList = providers;
+      if (activeProvList == null || (activeProvList is List && activeProvList.isEmpty)) {
+        activeProvList = await fetchProvidersFromGist();
+      }
+
+      if (activeProvList is List && activeProvList.isNotEmpty) {
+        for (var p in activeProvList) {
+          resolved.add({
+            'server': p['name'] ?? 'Primeflix Server',
+            'title': '$movieTitle (Official Stream)',
+            'url': p['url'] ?? '',
+            'isHindi': true,
+          });
+        }
       }
     }
 
