@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import '../services/stream_service.dart';
+import '../services/tmdb_service.dart'; // <--- Import added successfully
 import '../internal_player.dart';
 
 class MobileQualitySelectorSheet extends StatefulWidget {
