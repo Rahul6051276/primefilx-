@@ -32,6 +32,13 @@ jobs:
           cd mobile_version
           flutter create . --platforms=android --org com.example.primefilx
 
+      - name: Fix Gradle Wrapper Distribution
+        run: |
+          cd mobile_version/android
+          if [ -f "gradle/wrapper/gradle-wrapper.properties" ]; then
+            sed -i 's/gradle-7.5-all.zip/gradle-8.3-bin.zip/g' gradle/wrapper/gradle-wrapper.properties
+          fi
+
       - name: Install Dependencies & Build APK
         run: |
           cd mobile_version
