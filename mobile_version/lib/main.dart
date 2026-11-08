@@ -9,16 +9,16 @@ void main() {
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
   ));
-  runApp(const PrimefilxApp());
+  runApp(const MobileCinemaTvApp());
 }
 
-class PrimefilxApp extends StatelessWidget {
-  const PrimefilxApp({super.key});
+class MobileCinemaTvApp extends StatelessWidget {
+  const MobileCinemaTvApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Primefilx',
+      title: 'Cinema TV HQ',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -94,18 +94,18 @@ class _MobileSplashScreenState extends State<MobileSplashScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: const LinearGradient(
-                          colors: [Color(0xFFE50914), Color(0xFF831010)],
+                          colors: [Color(0xFF0072D2), Color(0xFF001B44)],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFFE50914).withOpacity(0.5),
+                            color: const Color(0xFF0072D2).withOpacity(0.5),
                             blurRadius: 30,
                             spreadRadius: 2,
                           ),
                         ],
-                        border: Border.all(color: const Color(0xFFFF4D4D), width: 2.5),
+                        border: Border.all(color: const Color(0xFF38BDF8), width: 2.5),
                       ),
                       child: const Center(
                         child: Icon(Icons.play_arrow_rounded, size: 55, color: Colors.white),
@@ -116,10 +116,10 @@ class _MobileSplashScreenState extends State<MobileSplashScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Text(
-                          'PRIME',
+                          'CINEMA ',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 28,
+                            fontSize: 26,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 2.0,
                           ),
@@ -128,15 +128,15 @@ class _MobileSplashScreenState extends State<MobileSplashScreen>
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
-                              colors: [Color(0xFFE50914), Color(0xFFB20710)],
+                              colors: [Color(0xFF0072D2), Color(0xFF00458E)],
                             ),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
-                            'FLX',
+                            'TV HQ',
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 18,
+                              fontSize: 16,
                               fontWeight: FontWeight.w900,
                               letterSpacing: 1.5,
                             ),
