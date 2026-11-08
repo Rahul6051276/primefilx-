@@ -40,21 +40,52 @@ class CatalogService {
     return res;
   }
 
-  // Raw Future return type - completely safe from markdown parsers
+  // Multi-page pagination to fetch 40+ titles per catalog
   static Future fetchMassiveCatalogs() async {
     try {
       final responses = await Future.wait([
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=8&watch_region=IN&sort_by=popularity.desc')).timeout(const Duration(seconds: 6)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=9&watch_region=IN&sort_by=popularity.desc')).timeout(const Duration(seconds: 6)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=122&watch_region=IN&sort_by=popularity.desc')).timeout(const Duration(seconds: 6)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=232&watch_region=IN&sort_by=popularity.desc')).timeout(const Duration(seconds: 6)),
+        // Netflix (Provider 8) - Pages 1 & 2
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=8&watch_region=IN&sort_by=popularity.desc&page=1')),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=8&watch_region=IN&sort_by=popularity.desc&page=2')),
+        
+        // Prime Video (Provider 9) - Pages 1 & 2
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=9&watch_region=IN&sort_by=popularity.desc&page=1')),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=9&watch_region=IN&sort_by=popularity.desc&page=2')),
+        
+        // JioHotstar / Disney+ (Provider 337/122) - Pages 1 & 2
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=337&watch_region=IN&sort_by=popularity.desc&page=1')),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=337&watch_region=IN&sort_by=popularity.desc&page=2')),
+        
+        // ZEE5 (Provider 232) - Pages 1 & 2
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_watch_providers=232&watch_region=IN&sort_by=popularity.desc&page=1')),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_watch_providers=232&watch_region=IN&sort_by=popularity.desc&page=2')),
       ]);
 
+      var netflixList = [
+        ...(responses[0].statusCode == 200 ? parseResults(jsonDecode(responses[0].body)['results'], isTv: true) : []),
+        ...(responses[1].statusCode == 200 ? parseResults(jsonDecode(responses[1].body)['results'], isTv: true) : []),
+      ];
+
+      var primeList = [
+        ...(responses[2].statusCode == 200 ? parseResults(jsonDecode(responses[2].body)['results'], isTv: true) : []),
+        ...(responses[3].statusCode == 200 ? parseResults(jsonDecode(responses[3].body)['results'], isTv: true) : []),
+      ];
+
+      var hotstarList = [
+        ...(responses[4].statusCode == 200 ? parseResults(jsonDecode(responses[4].body)['results'], isTv: true) : []),
+        ...(responses[5].statusCode == 200 ? parseResults(jsonDecode(responses[5].body)['results'], isTv: true) : []),
+      ];
+
+      var zee5List = [
+        ...(responses[6].statusCode == 200 ? parseResults(jsonDecode(responses[6].body)['results'], isTv: false) : []),
+        ...(responses[7].statusCode == 200 ? parseResults(jsonDecode(responses[7].body)['results'], isTv: false) : []),
+      ];
+
       return {
-        'netflix': responses[0].statusCode == 200 ? parseResults(jsonDecode(responses[0].body)['results'], isTv: true) : [],
-        'prime': responses[1].statusCode == 200 ? parseResults(jsonDecode(responses[1].body)['results'], isTv: true) : [],
-        'hotstar': responses[2].statusCode == 200 ? parseResults(jsonDecode(responses[2].body)['results'], isTv: true) : [],
-        'zee5': responses[3].statusCode == 200 ? parseResults(jsonDecode(responses[3].body)['results'], isTv: true) : [],
+        'netflix': netflixList,
+        'prime': primeList,
+        'hotstar': hotstarList,
+        'zee5': zee5List,
       };
     } catch (_) {
       return {};
