@@ -103,15 +103,10 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     try {
       final responses = await Future.wait([
         http.get(Uri.parse(MobileStreamService.gistUrl)).timeout(const Duration(seconds: 4)),
-        // 1. Bollywood (Latest with popularity fallback)
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=primary_release_date.desc')).timeout(const Duration(seconds: 5)),
-        // 2. Hindi Web Series
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=first_air_date.desc')).timeout(const Duration(seconds: 5)),
-        // 3. Hollywood Hindi Dubbed
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 5)),
-        // 4. English Web Series
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 5)),
-        // 5. South Indian Movies
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&sort_by=popularity.desc')).timeout(const Duration(seconds: 5)),
       ]);
 
@@ -124,7 +119,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         bollywoodLatest = CatalogService.parseResults(jsonDecode(responses[1].body)['results']);
       }
       
-      // Fallback if release_date sorting returns empty
       if (bollywoodLatest.isEmpty) {
         final fallbackRes = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc'));
         if (fallbackRes.statusCode == 200) {
@@ -609,7 +603,7 @@ class _MobileCategoryGridScreen extends StatelessWidget {
       body: GridView.builder(
         padding: const EdgeInsets.all(12),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount:,
+          crossAxisCount: 3, // <--- Fixed here!
           childAspectRatio: 0.65,
           crossAxisSpacing: 8,
           mainAxisSpacing: 8,
