@@ -7,9 +7,6 @@ import '../services/tmdb_service.dart';
 import '../services/stream_service.dart';
 import '../services/catalog_service.dart';
 import '../widgets/mobile_stream_modal.dart';
-// Agar yeh widgets kisi aur file mein hain toh unke imports yahan ensure kar lein:
-// import '../widgets/mobile_season_episode_selector.dart';
-// import '../widgets/mobile_category_grid_screen.dart';
 import 'search_screen.dart';
 import 'my_list_screen.dart';
 
@@ -29,11 +26,11 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   var hollywoodHindiDubbed = [];
   var hindiWebSeries = [];
 
-  List<dynamic> netflixCatalog = [];
-  List<dynamic> primeCatalog = [];
-  List<dynamic> hotstarCatalog = [];
-  List<dynamic> zee5Catalog = [];
-  List<dynamic> sonylivCatalog = [];
+  List netflixCatalog = [];
+  List primeCatalog = [];
+  List hotstarCatalog = [];
+  List zee5Catalog = [];
+  List sonylivCatalog = [];
 
   final PageController _bannerController = PageController();
   int _currentBannerIndex = 0;
@@ -140,10 +137,10 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     final catalogs = await CatalogService.fetchMassiveCatalogs();
     if (mounted) {
       setState(() {
-        netflixCatalog = catalogs['netflix']?.isNotEmpty == true ? catalogs['netflix']! : bollywoodLatest;
-        primeCatalog = catalogs['prime']?.isNotEmpty == true ? catalogs['prime']! : hollywoodHindiDubbed;
-        hotstarCatalog = catalogs['hotstar']?.isNotEmpty == true ? catalogs['hotstar']! : hindiWebSeries;
-        zee5Catalog = catalogs['zee5']?.isNotEmpty == true ? catalogs['zee5']! : bollywoodLatest;
+        netflixCatalog = (catalogs['netflix'] as List?)?.isNotEmpty == true ? catalogs['netflix']! : bollywoodLatest;
+        primeCatalog = (catalogs['prime'] as List?)?.isNotEmpty == true ? catalogs['prime']! : hollywoodHindiDubbed;
+        hotstarCatalog = (catalogs['hotstar'] as List?)?.isNotEmpty == true ? catalogs['hotstar']! : hindiWebSeries;
+        zee5Catalog = (catalogs['zee5'] as List?)?.isNotEmpty == true ? catalogs['zee5']! : bollywoodLatest;
         sonylivCatalog = bollywoodLatest;
       });
     }
@@ -161,7 +158,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         builder: (ctx) {
-          return MobileSeasonEpisodeSelectorSheet(
+          return _MobileSeasonEpisodeSelectorSheet(
             item: Map<String, dynamic>.from(item),
             activeProviders: activeProviders,
           );
@@ -230,7 +227,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => MobileCategoryGridScreen(
+        builder: (_) => _MobileCategoryGridScreen(
           title: '$providerName Catalog (${targetList.length}+ Titles)',
           rawItems: targetList,
           onItemTapped: _onItemTapped,
