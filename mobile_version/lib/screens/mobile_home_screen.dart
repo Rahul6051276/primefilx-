@@ -7,6 +7,8 @@ import '../services/tmdb_service.dart';
 import '../services/stream_service.dart';
 import '../widgets/mobile_stream_modal.dart';
 import '../internal_player.dart';
+import 'search_screen.dart';
+import 'my_list_screen.dart';
 
 class MobileHomeScreen extends StatefulWidget {
   const MobileHomeScreen({super.key});
@@ -40,6 +42,9 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   // Live Sports Banner State
   dynamic topLiveChannel;
   bool isLiveSportsLoading = true;
+
+  // Primeflix Top Tabs State ('Recommend', 'Movies', 'TV Shows', '18+')[span_1](start_span)[span_1](end_span)
+  String _selectedTab = 'Recommend';
 
   // Banner Carousel Controller
   final PageController _bannerController = PageController();
@@ -78,11 +83,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   Future _loadAllData() async {
-    // 1. Providers aur Continue Watching pehle load karein
     await _fetchProviders();
     await _loadContinueWatching();
-
-    // 2. TMDB content fetch karein with timeout protection
     await _fetchTmdbContent();
     await _fetchTopLiveChannel();
 
@@ -92,7 +94,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       _startCarouselTimer(total);
     }
 
-    // 3. Background mein deep 200+ titles load karein
     _fetchDeepCatalogs();
   }
 
@@ -143,7 +144,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
   Future _fetchTmdbContent() async {
     try {
-      // Bollywood
       try {
         final bollyRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=10')).timeout(const Duration(seconds: 8));
@@ -153,7 +153,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       } catch (_) {}
 
-      // Hindi Series
       try {
         final hindiTvRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&without_genres=10766&sort_by=vote_count.desc&vote_count.gte=10')).timeout(const Duration(seconds: 8));
@@ -165,7 +164,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       } catch (_) {}
 
-      // Hollywood Dubbed
       try {
         final hollyRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=100')).timeout(const Duration(seconds: 8));
@@ -174,7 +172,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       } catch (_) {}
 
-      // South Dubbed
       try {
         final southRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te%7Cta%7Cml%7Ckn&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
@@ -183,7 +180,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       } catch (_) {}
 
-      // English Series
       try {
         final hollySeriesRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=30')).timeout(const Duration(seconds: 8));
@@ -192,7 +188,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       } catch (_) {}
 
-      // Netflix
       try {
         final netflixRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=213&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
@@ -201,7 +196,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       } catch (_) {}
 
-      // Amazon
       try {
         final amazonRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=1024&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
@@ -212,7 +206,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     } catch (_) {}
   }
 
-  // 200+ Titles Background Fetcher (10 Pages per category)
   Future<List> _fetchMultiPages(String urlTemplate, {bool isTv = false}) async {
     List collected = [];
     for (int p = 1; p <= 10; p++) {
@@ -232,25 +225,21 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   void _fetchDeepCatalogs() async {
-    // 1. Bollywood 200+
     _fetchMultiPages('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=10')
         .then((list) {
       if (list.isNotEmpty && mounted) setState(() => allBollywood200 = list);
     });
 
-    // 2. South 200+
     _fetchMultiPages('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te%7Cta%7Cml%7Ckn&sort_by=popularity.desc&vote_count.gte=15')
         .then((list) {
       if (list.isNotEmpty && mounted) setState(() => allSouth200 = list);
     });
 
-    // 3. Hollywood 200+
     _fetchMultiPages('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=50')
         .then((list) {
       if (list.isNotEmpty && mounted) setState(() => allHollywood200 = list);
     });
 
-    // 4. Hindi Web Series 200+
     _fetchMultiPages('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&without_genres=10766&sort_by=vote_count.desc&vote_count.gte=8', isTv: true)
         .then((list) {
       if (list.isNotEmpty && mounted) {
@@ -258,7 +247,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       }
     });
 
-    // 5. English Web Series 200+
     _fetchMultiPages('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=vote_count.desc&vote_count.gte=30', isTv: true)
         .then((list) {
       if (list.isNotEmpty && mounted) setState(() => allEnglishSeries200 = list);
@@ -412,11 +400,99 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  // TOP FEATURED CAROUSEL (LIVE SPORTS BANNER + MOVIE BACKDROPS)
+  // --- PRIMEFLIX TOP TABS WIDGET (`Recommend`, `Movies`, `TV Shows`, `18+`)[span_2](start_span)[span_2](end_span) ---
+  Widget _buildCategoryTabs() {
+    final tabs = ['Recommend', 'Movies', 'TV Shows', '18+'];
+    return Container(
+      height: 40,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        itemCount: tabs.length,
+        itemBuilder: (ctx, i) {
+          final tab = tabs[i];
+          final isSelected = _selectedTab == tab;
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _selectedTab = tab;
+              });
+            },
+            child: Container(
+              alignment: Alignment.center,
+              margin: const EdgeInsets.only(right: 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    tab,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.white54,
+                      fontSize: 15,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  if (isSelected)
+                    Container(
+                      height: 2,
+                      width: 24,
+                      color: const Color(0xFF0072D2),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // --- STREAMING PROVIDERS LOGO ROW[span_3](start_span)[span_3](end_span) ---
+  Widget _buildStreamingProvidersRow() {
+    final providers = [
+      {'name': 'Netflix', 'color': const Color(0xFFE50914)},
+      {'name': 'JioHotstar', 'color': const Color(0xFF0072D2)},
+      {'name': 'Prime Video', 'color': const Color(0xFF00A8E1)},
+      {'name': 'ZEE5', 'color': const Color(0xFF8C1159)},
+    ];
+
+    return Container(
+      height: 60,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        itemCount: providers.length,
+        itemBuilder: (ctx, i) {
+          final p = providers[i];
+          return Container(
+            width: 110,
+            margin: const EdgeInsets.only(right: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF16181F),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white12),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              p['name'] as String,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildTopFeaturedCarousel() {
     final List<Widget> slides = [];
 
-    // 1. Live Sports Card
     if (topLiveChannel != null) {
       final chName = topLiveChannel['name'] ?? 'Live Match Broadcast';
       final isHindi = topLiveChannel['isHindi'] == true;
@@ -573,7 +649,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       );
     }
 
-    // 2. Movie Posters
     for (var m in heroBanners) {
       slides.add(
         GestureDetector(
@@ -724,7 +799,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  // SIDE DRAWER - SAARI CATEGORIES RESTORED
+  // SIDE DRAWER
   Widget _buildAppDrawer() {
     return Drawer(
       backgroundColor: const Color(0xFF07080B),
@@ -812,7 +887,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  // DEDICATED 200+ CATEGORY POSTER GRID VIEW WITH FILTER TOGGLE
   void _openCategoryPage(String type, String title) {
     List initialList = [];
     if (type == 'bollywood') {
@@ -958,6 +1032,18 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               ),
             ],
           ),
+          // Search button upar (top right) set hai
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.search_rounded, color: Colors.white, size: 26),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SearchScreen()),
+                );
+              },
+            ),
+          ],
         ),
       ),
       body: isLoading
@@ -973,8 +1059,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    _buildCategoryTabs(),
+                    const SizedBox(height: 4),
                     _buildTopFeaturedCarousel(),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
+                    _buildStreamingProvidersRow(),
+                    const SizedBox(height: 8),
 
                     if (continueWatchingList.isNotEmpty) ...[
                       _buildHeader('Continue Watching'),
@@ -1013,11 +1103,45 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 ),
               ),
             ),
+      // Bottom navigation bar mein niche Home, Menu aur My List hain[span_4](start_span)[span_4](end_span)
+      bottomNavigationBar: BottomNavigationBar(
+        backgroundColor: const Color(0xFF0F1014),
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: const Color(0xFF0072D2),
+        unselectedItemColor: Colors.white54,
+        currentIndex: 0,
+        onTap: (index) {
+          if (index == 1) {
+            // Menu / Drawer open
+            _scaffoldKey.currentState?.openDrawer();
+          } else if (index == 2) {
+            // My List
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MyListScreen()),
+            );
+          }
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_filled),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.menu_rounded),
+            label: 'Menu',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.bookmark_added_rounded),
+            label: 'My List',
+          ),
+        ],
+      ),
     );
   }
 }
 
-// 200+ POSTER GRID SCREEN WITH FILTER TOGGLE (LATEST / MOST POPULAR)
+// 200+ POSTER GRID SCREEN WITH FILTER TOGGLE
 class _MobileCategoryGridScreen extends StatefulWidget {
   final String title;
   final List rawItems;
@@ -1155,4 +1279,4 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
             ),
     );
   }
-}
+} 
