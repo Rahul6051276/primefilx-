@@ -27,7 +27,6 @@ class CatalogService {
       if (m['poster_path'] == null && m['backdrop_path'] == null) continue;
       final title = m['title'] ?? m['name'] ?? 'Untitled';
       
-      // Filter out daily soaps and TV serials automatically
       if (isDailySoapTitle(title)) continue;
 
       res.add({
@@ -43,10 +42,9 @@ class CatalogService {
     return res;
   }
 
-  // Fetch provider-specific catalogs in background
+  // Fetch provider-specific catalogs in background with correct generics <String, List>
   static Future> fetchMassiveCatalogs() async {
     try {
-      // 8: Netflix, 9: Prime Video, 122: Disney+ Hotstar, 232: ZEE5
       final responses = await Future.wait([
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=8&watch_region=IN&sort_by=popularity.desc')).timeout(const Duration(seconds: 6)),
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=9&watch_region=IN&sort_by=popularity.desc')).timeout(const Duration(seconds: 6)),
