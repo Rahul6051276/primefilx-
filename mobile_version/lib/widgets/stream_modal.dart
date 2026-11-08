@@ -12,7 +12,7 @@ class StreamModal extends StatefulWidget {
 
 class _StreamModalState extends State<StreamModal> {
   bool _isLoading = true;
-  List> _streams = [];
+  List _streams = [];
 
   @override
   void initState() {
