@@ -1,5 +1,4 @@
-<manifest xmlns:ns="http://schemas.android.com/android"
-    xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
         android:label="primefilx"
