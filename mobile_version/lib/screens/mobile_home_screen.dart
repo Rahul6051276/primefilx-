@@ -9,6 +9,7 @@ import '../widgets/mobile_stream_modal.dart';
 import '../widgets/home_drawer.dart';
 import '../widgets/category_grid_screen.dart';
 import '../internal_player.dart';
+import 'my_list_screen.dart'; // My List screen import kiya hai
 
 class MobileHomeScreen extends StatefulWidget {
   const MobileHomeScreen({super.key});
@@ -435,7 +436,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                     Container(
                       height: 2,
                       width: 24,
-                      color: const Color(0xFFE50914), // Primeflix Red indicator
+                      color: const Color(0xFFE50914),
                     ),
                 ],
               ),
@@ -446,7 +447,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  // --- STREAMING PROVIDERS LOGO ROW (Netflix, JioHotstar, Amazon) ---
+  // --- STREAMING PROVIDERS LOGO ROW ---
   Widget _buildStreamingProvidersRow() {
     final providers = [
       {'name': 'Netflix', 'color': const Color(0xFFE50914)},
@@ -977,7 +978,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                       const SizedBox(height: 12),
                     ],
 
-                    _buildHeader('Trending Now / Bollywood Latest'),
+                    _buildHeader('Bollywood Latest Movies'),
                     _buildHorizontalRow(bollywoodLatest),
                     const SizedBox(height: 12),
 
@@ -1008,6 +1009,41 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 ),
               ),
             ),
+      // --- BOTTOM NAVIGATION BAR AS SHOWN IN SCREENSHOT ---
+      bottomNavigationBar: BottomNavigationBar(
+        backgroundColor: const Color(0xFF0F1014),
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: const Color(0xFFE50914), // Primeflix Red
+        unselectedItemColor: Colors.white54,
+        currentIndex: 0,
+        onTap: (index) {
+          if (index == 3) {
+            // My List screen open karega
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MyListScreen()),
+            );
+          }
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_filled),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.swap_vert_rounded),
+            label: 'Sort',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.trending_up_rounded),
+            label: 'Ranking',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.bookmark_added_rounded),
+            label: 'My List',
+          ),
+        ],
+      ),
     );
   }
 }
