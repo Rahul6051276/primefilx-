@@ -3,18 +3,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-
-// Services aur Config imports
 import '../services/tmdb_service.dart';
 import '../services/stream_service.dart';
-
-// Widgets aur Screens imports
 import '../widgets/mobile_stream_modal.dart';
-import '../widgets/home_drawer.dart';
-import '../widgets/category_grid_screen.dart';
 import '../internal_player.dart';
-import 'search_screen.dart';
-import 'my_list_screen.dart';
 
 class MobileHomeScreen extends StatefulWidget {
   const MobileHomeScreen({super.key});
@@ -38,18 +30,18 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   var netflixSeries = [];
   var amazonSeries = [];
 
+  // Deep Catalogs (200+ Titles each)
   List allBollywood200 = [];
   List allSouth200 = [];
   List allHollywood200 = [];
   List allHindiSeries200 = [];
   List allEnglishSeries200 = [];
 
+  // Live Sports Banner State
   dynamic topLiveChannel;
   bool isLiveSportsLoading = true;
 
-  // Primeflix Top Tabs State ('Recommend', 'Movies', 'TV Shows', '18+')
-  String _selectedTab = 'Recommend';
-
+  // Banner Carousel Controller
   final PageController _bannerController = PageController();
   int _currentBannerIndex = 0;
   Timer? _carouselTimer;
@@ -86,8 +78,11 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   Future _loadAllData() async {
+    // 1. Providers aur Continue Watching pehle load karein
     await _fetchProviders();
     await _loadContinueWatching();
+
+    // 2. TMDB content fetch karein with timeout protection
     await _fetchTmdbContent();
     await _fetchTopLiveChannel();
 
@@ -97,6 +92,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       _startCarouselTimer(total);
     }
 
+    // 3. Background mein deep 200+ titles load karein
     _fetchDeepCatalogs();
   }
 
@@ -147,6 +143,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
   Future _fetchTmdbContent() async {
     try {
+      // Bollywood
       try {
         final bollyRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=10')).timeout(const Duration(seconds: 8));
@@ -156,6 +153,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       } catch (_) {}
 
+      // Hindi Series
       try {
         final hindiTvRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&without_genres=10766&sort_by=vote_count.desc&vote_count.gte=10')).timeout(const Duration(seconds: 8));
@@ -167,6 +165,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       } catch (_) {}
 
+      // Hollywood Dubbed
       try {
         final hollyRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=100')).timeout(const Duration(seconds: 8));
@@ -175,6 +174,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       } catch (_) {}
 
+      // South Dubbed
       try {
         final southRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te%7Cta%7Cml%7Ckn&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
@@ -183,6 +183,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       } catch (_) {}
 
+      // English Series
       try {
         final hollySeriesRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=30')).timeout(const Duration(seconds: 8));
@@ -191,6 +192,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       } catch (_) {}
 
+      // Netflix
       try {
         final netflixRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=213&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
@@ -199,6 +201,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       } catch (_) {}
 
+      // Amazon
       try {
         final amazonRes = await http.get(Uri.parse(
             '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=1024&sort_by=popularity.desc&vote_count.gte=20')).timeout(const Duration(seconds: 8));
@@ -209,6 +212,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     } catch (_) {}
   }
 
+  // 200+ Titles Background Fetcher (10 Pages per category)
   Future<List> _fetchMultiPages(String urlTemplate, {bool isTv = false}) async {
     List collected = [];
     for (int p = 1; p <= 10; p++) {
@@ -228,21 +232,25 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   void _fetchDeepCatalogs() async {
+    // 1. Bollywood 200+
     _fetchMultiPages('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=10')
         .then((list) {
       if (list.isNotEmpty && mounted) setState(() => allBollywood200 = list);
     });
 
+    // 2. South 200+
     _fetchMultiPages('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te%7Cta%7Cml%7Ckn&sort_by=popularity.desc&vote_count.gte=15')
         .then((list) {
       if (list.isNotEmpty && mounted) setState(() => allSouth200 = list);
     });
 
+    // 3. Hollywood 200+
     _fetchMultiPages('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=50')
         .then((list) {
       if (list.isNotEmpty && mounted) setState(() => allHollywood200 = list);
     });
 
+    // 4. Hindi Web Series 200+
     _fetchMultiPages('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&without_genres=10766&sort_by=vote_count.desc&vote_count.gte=8', isTv: true)
         .then((list) {
       if (list.isNotEmpty && mounted) {
@@ -250,6 +258,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       }
     });
 
+    // 5. English Web Series 200+
     _fetchMultiPages('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=vote_count.desc&vote_count.gte=30', isTv: true)
         .then((list) {
       if (list.isNotEmpty && mounted) setState(() => allEnglishSeries200 = list);
@@ -288,9 +297,9 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF141414),
+      backgroundColor: const Color(0xFF16181F),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
         return MobileQualitySelectorSheet(
@@ -311,7 +320,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         context,
         MaterialPageRoute(
           builder: (_) => InternalPlayerScreen(
-            url: playUrl.toString(),
+            videoUrl: playUrl.toString(),
             title: channel['name'] ?? 'Live Sports Broadcast',
           ),
         ),
@@ -322,7 +331,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   void _openSportsListSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF141414),
+      backgroundColor: const Color(0xFF16181F),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -334,7 +343,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               return const SizedBox(
                 height: 250,
                 child: Center(
-                  child: CircularProgressIndicator(color: Color(0xFFE50914)),
+                  child: CircularProgressIndicator(color: Color(0xFF0072D2)),
                 ),
               );
             }
@@ -377,7 +386,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                             backgroundColor: const Color(0xFF222222),
                             child: Icon(
                               Icons.tv,
-                              color: isHindi ? const Color(0xFF10B981) : const Color(0xFFE50914),
+                              color: isHindi ? const Color(0xFF10B981) : const Color(0xFF0072D2),
                             ),
                           ),
                           title: Text(ch['name'] ?? 'Sports Channel', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
@@ -385,7 +394,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                             isHindi ? 'Hindi Live Audio' : 'Live Stream',
                             style: TextStyle(color: isHindi ? const Color(0xFF10B981) : Colors.white38, fontSize: 12),
                           ),
-                          trailing: const Icon(Icons.play_circle_fill, color: Color(0xFFE50914), size: 28),
+                          trailing: const Icon(Icons.play_circle_fill, color: Color(0xFF0072D2), size: 28),
                           onTap: () {
                             Navigator.pop(ctx);
                             _playLiveChannel(ch);
@@ -403,99 +412,11 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  // --- PRIMEFLIX TOP TABS WIDGET ---
-  Widget _buildCategoryTabs() {
-    final tabs = ['Recommend', 'Movies', 'TV Shows', '18+'];
-    return Container(
-      height: 40,
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        itemCount: tabs.length,
-        itemBuilder: (ctx, i) {
-          final tab = tabs[i];
-          final isSelected = _selectedTab == tab;
-          return GestureDetector(
-            onTap: () {
-              setState(() {
-                _selectedTab = tab;
-              });
-            },
-            child: Container(
-              alignment: Alignment.center,
-              margin: const EdgeInsets.only(right: 18),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    tab,
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : Colors.white54,
-                      fontSize: 15,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  if (isSelected)
-                    Container(
-                      height: 2,
-                      width: 24,
-                      color: const Color(0xFFE50914),
-                    ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  // --- STREAMING PROVIDERS LOGO ROW ---
-  Widget _buildStreamingProvidersRow() {
-    final providers = [
-      {'name': 'Netflix', 'color': const Color(0xFFE50914)},
-      {'name': 'JioHotstar', 'color': const Color(0xFF0072D2)},
-      {'name': 'Prime Video', 'color': const Color(0xFF00A8E1)},
-      {'name': 'ZEE5', 'color': const Color(0xFF8C1159)},
-    ];
-
-    return Container(
-      height: 60,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        itemCount: providers.length,
-        itemBuilder: (ctx, i) {
-          final p = providers[i];
-          return Container(
-            width: 110,
-            margin: const EdgeInsets.only(right: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFF16181F),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white12),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              p['name'] as String,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
+  // TOP FEATURED CAROUSEL (LIVE SPORTS BANNER + MOVIE BACKDROPS)
   Widget _buildTopFeaturedCarousel() {
     final List<Widget> slides = [];
 
+    // 1. Live Sports Card
     if (topLiveChannel != null) {
       final chName = topLiveChannel['name'] ?? 'Live Match Broadcast';
       final isHindi = topLiveChannel['isHindi'] == true;
@@ -508,13 +429,13 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
               gradient: const LinearGradient(
-                colors: [Color(0xFF2B090C), Color(0xFF5A1217)],
+                colors: [Color(0xFF0B192C), Color(0xFF1E3E62)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFE50914).withOpacity(0.3),
+                  color: const Color(0xFF0072D2).withOpacity(0.3),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -596,7 +517,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                                 const Text(
                                   'WATCH LIVE MATCH',
                                   style: TextStyle(
-                                    color: Color(0xFFFF4D4D),
+                                    color: Color(0xFF38BDF8),
                                     fontSize: 12,
                                     fontWeight: FontWeight.w800,
                                     letterSpacing: 1,
@@ -620,7 +541,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
-                                colors: [Color(0xFFE50914), Color(0xFFB20710)],
+                                colors: [Color(0xFF0072D2), Color(0xFF00529B)],
                               ),
                               borderRadius: BorderRadius.circular(20),
                             ),
@@ -652,6 +573,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       );
     }
 
+    // 2. Movie Posters
     for (var m in heroBanners) {
       slides.add(
         GestureDetector(
@@ -792,7 +714,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(2),
                   color: _currentBannerIndex == index
-                      ? const Color(0xFFE50914)
+                      ? const Color(0xFF0072D2)
                       : Colors.white24,
                 ),
               ),
@@ -802,6 +724,95 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
+  // SIDE DRAWER - SAARI CATEGORIES RESTORED
+  Widget _buildAppDrawer() {
+    return Drawer(
+      backgroundColor: const Color(0xFF07080B),
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: const BoxDecoration(color: Color(0xFF0F1014)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF0072D2), Color(0xFF001B44)],
+                    ),
+                    border: Border.all(color: const Color(0xFF38BDF8), width: 1.5),
+                  ),
+                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 30),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'CINEMA TV HQ',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.sports_cricket, color: Color(0xFF38BDF8)),
+            title: const Text('Live Sports & Cricket', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            subtitle: const Text('Star Sports, Sony Ten & Matches', style: TextStyle(color: Colors.white54, fontSize: 11)),
+            onTap: () {
+              Navigator.pop(context);
+              _openSportsListSheet();
+            },
+          ),
+          const Divider(color: Colors.white12),
+          ListTile(
+            leading: const Icon(Icons.movie_filter_rounded, color: Color(0xFF38BDF8)),
+            title: const Text('Bollywood Movies', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            onTap: () {
+              Navigator.pop(context);
+              _openCategoryPage('bollywood', 'Bollywood Movies');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.local_movies_rounded, color: Color(0xFF38BDF8)),
+            title: const Text('South Indian (Hindi Dubbed)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            onTap: () {
+              Navigator.pop(context);
+              _openCategoryPage('south', 'South Indian Movies');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.theaters_rounded, color: Color(0xFF38BDF8)),
+            title: const Text('Hollywood Movies (Hindi Dubbed)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            onTap: () {
+              Navigator.pop(context);
+              _openCategoryPage('hollywood_movies', 'Hollywood Movies');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.live_tv_rounded, color: Color(0xFF38BDF8)),
+            title: const Text('Hindi Web Series', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            onTap: () {
+              Navigator.pop(context);
+              _openCategoryPage('hindi_series', 'Hindi Web Series');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.connected_tv_rounded, color: Color(0xFF38BDF8)),
+            title: const Text('English Web Series', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            onTap: () {
+              Navigator.pop(context);
+              _openCategoryPage('english_series', 'English Web Series');
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // DEDICATED 200+ CATEGORY POSTER GRID VIEW WITH FILTER TOGGLE
   void _openCategoryPage(String type, String title) {
     List initialList = [];
     if (type == 'bollywood') {
@@ -819,7 +830,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => MobileCategoryGridScreen(
+        builder: (_) => _MobileCategoryGridScreen(
           title: title,
           rawItems: initialList,
           onItemTapped: _onItemTapped,
@@ -907,10 +918,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: const Color(0xFF0F1014),
-      drawer: HomeDrawer(
-        onSelectCategory: (type, title) => _openCategoryPage(type, title),
-        onOpenSports: () => _openSportsListSheet(),
-      ),
+      drawer: _buildAppDrawer(),
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(60),
         child: AppBar(
@@ -923,7 +931,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           title: Row(
             children: [
               const Text(
-                'PRIME',
+                'CINEMA ',
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 20,
@@ -935,12 +943,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFFE50914), Color(0xFFB20710)],
+                    colors: [Color(0xFF0072D2), Color(0xFF00458E)],
                   ),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: const Text(
-                  'FLX',
+                  'HQ',
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
@@ -950,25 +958,14 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               ),
             ],
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.search_rounded, color: Colors.white, size: 26),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SearchScreen()),
-                );
-              },
-            ),
-          ],
         ),
       ),
       body: isLoading
           ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFFE50914)),
+              child: CircularProgressIndicator(color: Color(0xFF0072D2)),
             )
           : RefreshIndicator(
-              color: const Color(0xFFE50914),
+              color: const Color(0xFF0072D2),
               backgroundColor: const Color(0xFF16181F),
               onRefresh: _loadAllData,
               child: SingleChildScrollView(
@@ -976,12 +973,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildCategoryTabs(),
-                    const SizedBox(height: 4),
                     _buildTopFeaturedCarousel(),
-                    const SizedBox(height: 6),
-                    _buildStreamingProvidersRow(),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 10),
 
                     if (continueWatchingList.isNotEmpty) ...[
                       _buildHeader('Continue Watching'),
@@ -1020,39 +1013,146 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 ),
               ),
             ),
-      bottomNavigationBar: BottomNavigationBar(
+    );
+  }
+}
+
+// 200+ POSTER GRID SCREEN WITH FILTER TOGGLE (LATEST / MOST POPULAR)
+class _MobileCategoryGridScreen extends StatefulWidget {
+  final String title;
+  final List rawItems;
+  final Function(dynamic) onItemTapped;
+
+  const _MobileCategoryGridScreen({
+    required this.title,
+    required this.rawItems,
+    required this.onItemTapped,
+  });
+
+  @override
+  State<_MobileCategoryGridScreen> createState() => _MobileCategoryGridScreenState();
+}
+
+class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
+  late List _items;
+  bool _isLatest = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _items = List.from(widget.rawItems);
+    _applySort();
+  }
+
+  void _applySort() {
+    if (_isLatest) {
+      _items.sort((a, b) {
+        final yearA = int.tryParse(a['year']?.toString() ?? '0') ?? 0;
+        final yearB = int.tryParse(b['year']?.toString() ?? '0') ?? 0;
+        return yearB.compareTo(yearA);
+      });
+    } else {
+      _items.sort((a, b) {
+        final rateA = double.tryParse(a['rating']?.toString() ?? '0') ?? 0.0;
+        final rateB = double.tryParse(b['rating']?.toString() ?? '0') ?? 0.0;
+        return rateB.compareTo(rateA);
+      });
+    }
+  }
+
+  void _toggleFilter() {
+    setState(() {
+      _isLatest = !_isLatest;
+      _applySort();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F1014),
+      appBar: AppBar(
         backgroundColor: const Color(0xFF0F1014),
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFFE50914),
-        unselectedItemColor: Colors.white54,
-        currentIndex: 0,
-        onTap: (index) {
-          if (index == 3) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const MyListScreen()),
-            );
-          }
-        },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_filled),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.swap_vert_rounded),
-            label: 'Sort',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.trending_up_rounded),
-            label: 'Ranking',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.bookmark_added_rounded),
-            label: 'My List',
+        elevation: 0,
+        title: Text(
+          widget.title,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12, top: 10, bottom: 10),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: _toggleFilter,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E222D),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFF0072D2), width: 1.2),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.swap_vert_rounded, size: 16, color: Color(0xFF38BDF8)),
+                    const SizedBox(width: 4),
+                    Text(
+                      _isLatest ? 'Latest' : 'Popular',
+                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       ),
+      body: _items.isEmpty
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF0072D2)))
+          : GridView.builder(
+              padding: const EdgeInsets.all(12),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                childAspectRatio: 0.65,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+              ),
+              itemCount: _items.length,
+              itemBuilder: (ctx, i) {
+                final item = _items[i];
+                return GestureDetector(
+                  onTap: () => widget.onItemTapped(item),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.network(
+                          item['poster'] ?? item['backdrop'] ?? '',
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(color: const Color(0xFF1E2029)),
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            color: Colors.black87,
+                            child: Text(
+                              item['title'] ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
     );
   }
 }
