@@ -103,16 +103,16 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     try {
       final responses = await Future.wait([
         http.get(Uri.parse(MobileStreamService.gistUrl)).timeout(const Duration(seconds: 4)),
-        // 1. Latest Bollywood Movies (Strictly latest release date)
+        // 1. Bollywood (Latest with popularity fallback)
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=primary_release_date.desc')).timeout(const Duration(seconds: 5)),
-        // 2. Latest Hindi Web Series (Strictly latest first air date)
+        // 2. Hindi Web Series
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=first_air_date.desc')).timeout(const Duration(seconds: 5)),
-        // 3. Latest Hollywood Movies (Hindi Dubbed / English recent releases)
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=primary_release_date.desc')).timeout(const Duration(seconds: 5)),
-        // 4. Latest English Web Series
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=first_air_date.desc')).timeout(const Duration(seconds: 5)),
-        // 5. Latest South Indian Movies (Telugu, Tamil, Malayalam, Kannada - recent release date)
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&sort_by=primary_release_date.desc')).timeout(const Duration(seconds: 5)),
+        // 3. Hollywood Hindi Dubbed
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 5)),
+        // 4. English Web Series
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 5)),
+        // 5. South Indian Movies
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&sort_by=popularity.desc')).timeout(const Duration(seconds: 5)),
       ]);
 
       if (responses[0].statusCode == 200) {
@@ -122,10 +122,19 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
       if (responses[1].statusCode == 200) {
         bollywoodLatest = CatalogService.parseResults(jsonDecode(responses[1].body)['results']);
-        if (bollywoodLatest.isNotEmpty) {
-          heroBanners = bollywoodLatest.take(6).toList();
-          _startCarouselTimer(heroBanners.length);
+      }
+      
+      // Fallback if release_date sorting returns empty
+      if (bollywoodLatest.isEmpty) {
+        final fallbackRes = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc'));
+        if (fallbackRes.statusCode == 200) {
+          bollywoodLatest = CatalogService.parseResults(jsonDecode(fallbackRes.body)['results']);
         }
+      }
+
+      if (bollywoodLatest.isNotEmpty) {
+        heroBanners = bollywoodLatest.take(6).toList();
+        _startCarouselTimer(heroBanners.length);
       }
 
       if (responses[2].statusCode == 200) {
@@ -600,7 +609,7 @@ class _MobileCategoryGridScreen extends StatelessWidget {
       body: GridView.builder(
         padding: const EdgeInsets.all(12),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
+          crossAxisCount:,
           childAspectRatio: 0.65,
           crossAxisSpacing: 8,
           mainAxisSpacing: 8,
