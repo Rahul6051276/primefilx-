@@ -1,3 +1,35 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'screens/mobile_home_screen.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+  ));
+  runApp(const PrimeflixApp());
+}
+
+class PrimeflixApp extends StatelessWidget {
+  const PrimeflixApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Primeflix',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF0F1014),
+        fontFamily: 'sans-serif',
+      ),
+      home: const MobileSplashScreen(),
+    );
+  }
+}
+
 class MobileSplashScreen extends StatefulWidget {
   const MobileSplashScreen({super.key});
 
