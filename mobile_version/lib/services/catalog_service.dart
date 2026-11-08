@@ -40,7 +40,8 @@ class CatalogService {
     return res;
   }
 
-    static Future> fetchMassiveCatalogs() async {
+  // Raw Future return type - completely safe from markdown parsers
+  static Future fetchMassiveCatalogs() async {
     try {
       final responses = await Future.wait([
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=8&watch_region=IN&sort_by=popularity.desc')).timeout(const Duration(seconds: 6)),
