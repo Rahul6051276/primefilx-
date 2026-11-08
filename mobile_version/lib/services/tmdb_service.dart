@@ -1,40 +1,51 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../config/tmdb_config.dart';
 
 class TmdbService {
+  static const String apiKey = 'YOUR_TMDB_API_KEY'; // Apni key yahan check kar lena
+  static const String baseUrl = 'https://api.themoviedb.org/3';
+
   static Future<List<dynamic>> fetchTrending() async {
     try {
-      final url = Uri.parse('${MobileConfig.tmdbBase}/trending/all/day?api_key=${MobileConfig.tmdbKey}');
-      final response = await http.get(url);
+      final response = await http.get(
+        Uri.parse('$baseUrl/trending/all/day?api_key=$apiKey'),
+      );
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+        final data = jsonDecode(response.body);
         return data['results'] ?? [];
       }
-    } catch (_) {}
+    } catch (e) {
+      print('TMDB Trending Error: $e');
+    }
     return [];
   }
 
   static Future<List<dynamic>> searchMovies(String query) async {
     try {
-      final url = Uri.parse('${MobileConfig.tmdbBase}/search/multi?api_key=${MobileConfig.tmdbKey}&query=${Uri.encodeComponent(query)}');
-      final response = await http.get(url);
+      final response = await http.get(
+        Uri.parse('$baseUrl/search/multi?api_key=$apiKey&query=$query'),
+      );
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+        final data = jsonDecode(response.body);
         return data['results'] ?? [];
       }
-    } catch (_) {}
+    } catch (e) {
+      print('TMDB Search Error: $e');
+    }
     return [];
   }
 
   static Future?> fetchMovieDetails(int tmdbId, String mediaType) async {
     try {
-      final url = Uri.parse('${MobileConfig.tmdbBase}/$mediaType/$tmdbId?api_key=${MobileConfig.tmdbKey}&append_to_response=credits,external_ids');
-      final response = await http.get(url);
+      final response = await http.get(
+        Uri.parse('$baseUrl/$mediaType/$tmdbId?api_key=$apiKey'),
+      );
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        return jsonDecode(response.body);
       }
-    } catch (_) {}
+    } catch (e) {
+      print('TMDB Details Error: $e');
+    }
     return null;
   }
 }
