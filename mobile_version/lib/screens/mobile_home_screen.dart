@@ -1,274 +1,94 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import '../services/tmdb_service.dart';
-import '../widgets/stream_modal.dart';
-import 'search_screen.dart';
-import 'my_list_screen.dart';
+import '../services/stream_service.dart';
+import '../internal_player.dart';
 
-class MobileHomeScreen extends StatefulWidget {
-  const MobileHomeScreen({Key? key}) : super(key: key);
+class StreamModal extends StatefulWidget {
+  final dynamic item;
+  const StreamModal({Key? key, required this.item}) : super(key: key);
 
   @override
-  State<MobileHomeScreen> createState() => _MobileHomeScreenState();
+  State<StreamModal> createState() => _StreamModalState();
 }
 
-class _MobileHomeScreenState extends State<MobileHomeScreen> {
-  List<dynamic> _trendingMovies = [];
+class _StreamModalState extends State<StreamModal> {
   bool _isLoading = true;
-  int _currentIndex = 0;
-  
-  final PageController _pageController = PageController();
-  Timer? _sliderTimer;
-
-  final List> _providers = [
-    {'name': 'Netflix', 'color': Colors.red, 'logo': 'NETFLIX'},
-    {'name': 'JioHotstar', 'color': Colors.deepPurple, 'logo': 'JioHotstar'},
-    {'name': 'Prime Video', 'color': Colors.cyan, 'logo': 'prime video'},
-  ];
+  List _streams = [];
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _fetchStreams();
   }
 
-  @override
-  void dispose() {
-    _sliderTimer?.cancel();
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadData() async {
-    final results = await TmdbService.fetchTrending();
+  Future<void> _fetchStreams() async {
+    final streams = await MobileStreamService.getDirectStreams(item: widget.item);
     setState(() {
-      _trendingMovies = results;
+      _streams = streams;
       _isLoading = false;
     });
-
-    if (_trendingMovies.isNotEmpty) {
-      _startAutoSlider();
-    }
-  }
-
-  void _startAutoSlider() {
-    _sliderTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
-      if (_pageController.hasClients && _trendingMovies.isNotEmpty) {
-        int nextPage = (_pageController.page?.round() ?? 0) + 1;
-        if (nextPage >= 5 || nextPage >= _trendingMovies.length) {
-          nextPage = 0;
-        }
-        _pageController.animateToPage(
-          nextPage,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeInOut,
-        );
-      }
-    });
-  }
-
-  void _handleItemTap(dynamic item) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => StreamModal(item: item),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_currentIndex == 3) {
-      return Scaffold(
-        backgroundColor: Colors.black,
-        body: const MyListScreen(),
-        bottomNavigationBar: _buildBottomNavigationBar(),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.red))
-          : SafeArea(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => const SearchScreen()),
-                                );
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[900],
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Row(
-                                  children: [
-                                    Icon(Icons.search, color: Colors.grey),
-                                    SizedBox(width: 8),
-                                    Text('Search', style: TextStyle(color: Colors.grey, fontSize: 16)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Icon(Icons.notifications_outlined, color: Colors.white),
-                          const SizedBox(width: 12),
-                          const Icon(Icons.download_outlined, color: Colors.white),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    if (_trendingMovies.isNotEmpty)
-                      SizedBox(
-                        height: 220,
-                        child: PageView.builder(
-                          controller: _pageController,
-                          itemCount: _trendingMovies.length > 5 ? 5 : _trendingMovies.length,
-                          itemBuilder: (context, index) {
-                            final movie = _trendingMovies[index];
-                            final backdrop = movie['backdrop_path'] ?? movie['poster_path'];
-                            return GestureDetector(
-                              onTap: () => _handleItemTap(movie),
-                              child: Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 12),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      if (backdrop != null)
-                                        Image.network(
-                                          'https://image.tmdb.org/t/p/original$backdrop',
-                                          fit: BoxFit.cover,
-                                        ),
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            begin: Alignment.topCenter,
-                                            end: Alignment.bottomCenter,
-                                            colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
-                                          ),
-                                        ),
-                                      ),
-                                      Positioned(
-                                        bottom: 12,
-                                        left: 12,
-                                        child: Text(
-                                          movie['title'] ?? movie['name'] ?? '',
-                                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    const SizedBox(height: 20),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12.0),
-                      child: Text('Streaming', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 70,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        itemCount: _providers.length,
-                        itemBuilder: (context, index) {
-                          final provider = _providers[index];
-                          return Container(
-                            width: 130,
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[900],
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.grey[800]!),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              provider['logo'] as String? ?? '',
-                              style: TextStyle(color: provider['color'] as Color? ?? Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12.0),
-                      child: Text('Trending Now', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 160,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        itemCount: _trendingMovies.length,
-                        itemBuilder: (context, index) {
-                          final movie = _trendingMovies[index];
-                          final posterPath = movie['poster_path'];
-                          final posterUrl = posterPath != null ? 'https://image.tmdb.org/t/p/w500$posterPath' : '';
-                          return GestureDetector(
-                            onTap: () => _handleItemTap(movie),
-                            child: Container(
-                              width: 105,
-                              margin: const EdgeInsets.symmetric(horizontal: 4),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: posterUrl.isNotEmpty
-                                    ? Image.network(posterUrl, fit: BoxFit.cover)
-                                    : Container(color: Colors.grey),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 30),
-                  ],
-                ),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(
+        color: Colors.black87,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                widget.item['title'] ?? widget.item['name'] ?? 'Select Stream',
+                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
               ),
-            ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
-    );
-  }
-
-  Widget _buildBottomNavigationBar() {
-    return BottomNavigationBar(
-      backgroundColor: Colors.black,
-      selectedItemColor: Colors.red,
-      unselectedItemColor: Colors.grey,
-      currentIndex: _currentIndex,
-      type: BottomNavigationBarType.fixed,
-      onTap: (index) {
-        setState(() {
-          _currentIndex = index;
-        });
-      },
-      items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-        BottomNavigationBarItem(icon: Icon(Icons.sort), label: 'Sort'),
-        BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Ranking'),
-        BottomNavigationBarItem(icon: Icon(Icons.list), label: 'My List'),
-      ],
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _isLoading
+              ? const Center(child: Padding(
+                  padding: EdgeInsets.all(20.0),
+                  child: CircularProgressIndicator(color: Colors.red),
+                ))
+              : _streams.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(20.0),
+                      child: Text('No streams available.', style: TextStyle(color: Colors.grey)),
+                    )
+                  : SizedBox(
+                      height: 250,
+                      child: ListView.builder(
+                        itemCount: _streams.length,
+                        itemBuilder: (context, index) {
+                          final stream = _streams[index];
+                          return ListTile(
+                            title: Text(stream['source'] ?? 'Stream', style: const TextStyle(color: Colors.white)),
+                            subtitle: Text('${stream['quality']} - ${stream['language']}', style: const TextStyle(color: Colors.grey)),
+                            trailing: const Icon(Icons.play_arrow, color: Colors.red),
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => InternalPlayerScreen(videoUrl: stream['url']),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+        ],
+      ),
     );
   }
 }
