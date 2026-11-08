@@ -12,7 +12,7 @@ class StreamModal extends StatefulWidget {
 
 class _StreamModalState extends State<StreamModal> {
   bool _isLoading = true;
-  List> _streams = [];
+  List _streams = [];
 
   @override
   void initState() {
@@ -41,7 +41,7 @@ class _StreamModalState extends State<StreamModal> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.between,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 widget.item['title'] ?? widget.item['name'] ?? 'Select Stream',
@@ -79,7 +79,7 @@ class _StreamModalState extends State<StreamModal> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => InternalPlayerScreen(videoUrl: stream['url']),
+                                  builder: (_) => InternalPlayerScreen(url: stream['url']),
                                 ),
                               );
                             },
