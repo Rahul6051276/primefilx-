@@ -1,4 +1,4 @@
-name: Build Android APK
+Name: Build Android APK
 
 on:
   workflow_dispatch:
@@ -43,9 +43,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: App Release v1.0.${{ github.run_number }}
+          name: Primeflix v1.0.${{ github.run_number }}
           files: mobile_version/build/app/outputs/flutter-apk/app-release.apk
-          body: "Automated build without manual gradle files."
+          body: "Automated build for Primeflix streaming application."
           draft: false
           prerelease: false
         env:
