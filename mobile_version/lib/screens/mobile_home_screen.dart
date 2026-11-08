@@ -177,7 +177,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     return res;
   }
 
-  // Intelligent handler: If it's a TV show (Web Series), show Season/Episode selector. If movie, show direct quality sheet.
   void _onItemTapped(dynamic item) {
     bool isTv = item['isTv'] == true;
 
@@ -531,7 +530,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 }
 
-// Season & Episode Selector for Web Series
 class _MobileSeasonEpisodeSelectorSheet extends StatefulWidget {
   final Map<String, dynamic> item;
   final List activeProviders;
@@ -558,7 +556,7 @@ class _MobileSeasonEpisodeSelectorSheetState extends State<_MobileSeasonEpisodeS
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.between,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
                 child: Text(
@@ -581,7 +579,7 @@ class _MobileSeasonEpisodeSelectorSheetState extends State<_MobileSeasonEpisodeS
             height: 40,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              itemCount: 5, // Seasons 1 to 5
+              itemCount: 5,
               itemBuilder: (ctx, i) {
                 int sNum = i + 1;
                 bool isSelected = selectedSeason == sNum;
@@ -606,7 +604,7 @@ class _MobileSeasonEpisodeSelectorSheetState extends State<_MobileSeasonEpisodeS
           const SizedBox(height: 8),
           Expanded(
             child: ListView.builder(
-              itemCount: 10, // Episodes 1 to 10 per season
+              itemCount: 10,
               itemBuilder: (ctx, i) {
                 int eNum = i + 1;
                 bool isSelected = selectedEpisode == eNum;
@@ -617,7 +615,6 @@ class _MobileSeasonEpisodeSelectorSheetState extends State<_MobileSeasonEpisodeS
                   trailing: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFF0072D2)),
                   onTap: () {
                     Navigator.pop(context);
-                    // Pass selected season and episode into quality selector / player
                     var updatedItem = Map<String, dynamic>.from(widget.item);
                     updatedItem['title'] = "${widget.item['title']} - S${selectedSeason}E$eNum";
 
