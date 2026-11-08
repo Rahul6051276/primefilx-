@@ -25,8 +25,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   var bollywoodLatest = [];
   var hollywoodHindiDubbed = [];
   var hindiWebSeries = [];
-  var englishWebSeries = []; // Nayi row data
-  var southMovies = [];     // Nayi row data
+  var englishWebSeries = [];
+  var southMovies = [];
 
   List netflixCatalog = [];
   List primeCatalog = [];
@@ -103,13 +103,16 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     try {
       final responses = await Future.wait([
         http.get(Uri.parse(MobileStreamService.gistUrl)).timeout(const Duration(seconds: 4)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc')).timeout(const Duration(seconds: 5)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=vote_count.desc')).timeout(const Duration(seconds: 5)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 5)),
-        // English Web Series API Endpoint
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 5)),
-        // Latest South Indian Movies API Endpoint (Telugu, Tamil, Malayalam, Kannada)
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&sort_by=release_date.desc')).timeout(const Duration(seconds: 5)),
+        // 1. Latest Bollywood Movies (Strictly latest release date)
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=primary_release_date.desc')).timeout(const Duration(seconds: 5)),
+        // 2. Latest Hindi Web Series (Strictly latest first air date)
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=first_air_date.desc')).timeout(const Duration(seconds: 5)),
+        // 3. Latest Hollywood Movies (Hindi Dubbed / English recent releases)
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=primary_release_date.desc')).timeout(const Duration(seconds: 5)),
+        // 4. Latest English Web Series
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=first_air_date.desc')).timeout(const Duration(seconds: 5)),
+        // 5. Latest South Indian Movies (Telugu, Tamil, Malayalam, Kannada - recent release date)
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&sort_by=primary_release_date.desc')).timeout(const Duration(seconds: 5)),
       ]);
 
       if (responses[0].statusCode == 200) {
@@ -312,15 +315,15 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                     const SizedBox(height: 8),
                     _buildStreamingProvidersRow(),
                     const SizedBox(height: 16),
-                    _buildHorizontalMovieList('Trending Now', bollywoodLatest),
+                    _buildHorizontalMovieList('Latest Bollywood Releases', bollywoodLatest),
                     const SizedBox(height: 16),
-                    _buildHorizontalMovieList('Latest South Indian Movies', southMovies), // Nayi Row
+                    _buildHorizontalMovieList('Latest South Indian Movies', southMovies),
                     const SizedBox(height: 16),
-                    _buildHorizontalMovieList('English Web Series', englishWebSeries),   // Nayi Row
+                    _buildHorizontalMovieList('Latest English Web Series', englishWebSeries),
                     const SizedBox(height: 16),
-                    _buildHorizontalMovieList('Hollywood Movies (Hindi Dubbed)', hollywoodHindiDubbed),
+                    _buildHorizontalMovieList('Latest Hollywood Movies', hollywoodHindiDubbed),
                     const SizedBox(height: 16),
-                    _buildHorizontalMovieList('Hindi Web Series', hindiWebSeries),
+                    _buildHorizontalMovieList('Latest Hindi Web Series', hindiWebSeries),
                     const SizedBox(height: 24),
                   ],
                 ),
