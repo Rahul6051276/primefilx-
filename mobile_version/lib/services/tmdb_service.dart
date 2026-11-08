@@ -22,6 +22,3 @@ bool isDailySoapTitle(String title) {
   ];
   return blockList.any((b) => t.contains(b));
 }
-```[span_1](start_span)[span_1](end_span)
-
-Is file ko apne project mein `lib/services/tmdb_service.dart` ke naam se save kar de. Ab sab kuch tere purane aur exact setup ke mutabiq set hai!
