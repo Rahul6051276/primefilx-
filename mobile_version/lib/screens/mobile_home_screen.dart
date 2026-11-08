@@ -528,3 +528,77 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 }
+
+// --- SUPPORTING SHEET & GRID WIDGETS TO PREVENT COMPILE ERRORS ---
+
+class _MobileSeasonEpisodeSelectorSheet extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final List activeProviders;
+
+  const _MobileSeasonEpisodeSelectorSheet({required this.item, required this.activeProviders});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      height: MediaQuery.of(context).size.height * 0.4,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(item['title'] ?? 'Select Season/Episode', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          const Expanded(
+            child: Center(child: Text('Seasons & Episodes loading...', style: TextStyle(color: Colors.white54))),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileCategoryGridScreen extends StatelessWidget {
+  final String title;
+  final List rawItems;
+  final Function(dynamic) onItemTapped;
+  final Function(dynamic) onItemLongPressed;
+
+  const _MobileCategoryGridScreen({
+    required this.title,
+    required this.rawItems,
+    required this.onItemTapped,
+    required this.onItemLongPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F1014),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0F1014),
+        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 16)),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: GridView.builder(
+        padding: const EdgeInsets.all(12),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          childAspectRatio: 0.65,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+        ),
+        itemCount: rawItems.length,
+        itemBuilder: (ctx, i) {
+          final item = rawItems[i];
+          return GestureDetector(
+            onTap: () => onItemTapped(item),
+            onLongPress: () => onItemLongPressed(item),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(item['poster'] ?? '', fit: BoxFit.cover),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
