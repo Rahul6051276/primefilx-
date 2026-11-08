@@ -3,8 +3,8 @@ import 'package:http/http.dart' as http;
 import 'tmdb_service.dart';
 
 class MobileStreamService {
-  // Permanent stable Gist raw URL for provider fallback loading if needed
-  static const String gistUrl = 'https://gist.githubusercontent.com/Rahul6051276/239654d65b2124bffd0ea21b5251dc02/raw/providers.json';
+  // Updated clean raw Gist URL for the Render TMDB API provider
+  static const String gistUrl = 'https://gist.githubusercontent.com/Rahul6051276/5b0a18b2cf69a99d1d3e06629fcbc70a/raw/1da5a456a2924114e041e47a6cd16b5f6b1e4be1/TMDB%2520API';
 
   static bool isHindiStream(String title, {String category = ''}) {
     final lower = '$title $category'.toLowerCase();
