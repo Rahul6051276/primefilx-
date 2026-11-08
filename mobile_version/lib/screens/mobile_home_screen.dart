@@ -3,14 +3,18 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+
+// Services aur Config imports
 import '../services/tmdb_service.dart';
 import '../services/stream_service.dart';
+
+// Widgets aur Screens imports
 import '../widgets/mobile_stream_modal.dart';
 import '../widgets/home_drawer.dart';
 import '../widgets/category_grid_screen.dart';
 import '../internal_player.dart';
-import 'search_screen.dart'; // Search screen linked
-import 'my_list_screen.dart'; // My List screen linked
+import 'search_screen.dart';
+import 'my_list_screen.dart';
 
 class MobileHomeScreen extends StatefulWidget {
   const MobileHomeScreen({super.key});
@@ -947,7 +951,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
             ],
           ),
           actions: [
-            // Search Icon linked to SearchScreen
             IconButton(
               icon: const Icon(Icons.search_rounded, color: Colors.white, size: 26),
               onPressed: () {
@@ -1017,7 +1020,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 ),
               ),
             ),
-      // --- BOTTOM NAVIGATION BAR ---
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: const Color(0xFF0F1014),
         type: BottomNavigationBarType.fixed,
@@ -1025,12 +1027,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         unselectedItemColor: Colors.white54,
         currentIndex: 0,
         onTap: (index) {
-          if (index == 1) {
-            // Sort option or action can go here
-          } else if (index == 2) {
-            // Ranking action
-          } else if (index == 3) {
-            // My List screen navigation
+          if (index == 3) {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const MyListScreen()),
