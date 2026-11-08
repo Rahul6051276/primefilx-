@@ -41,6 +41,9 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   dynamic topLiveChannel;
   bool isLiveSportsLoading = true;
 
+  // Primeflix Top Tabs State ('Recommend', 'Movies', 'TV Shows', '18+')
+  String _selectedTab = 'Recommend';
+
   final PageController _bannerController = PageController();
   int _currentBannerIndex = 0;
   Timer? _carouselTimer;
@@ -391,6 +394,96 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           },
         );
       },
+    );
+  }
+
+  // --- PRIMEFLIX TOP TABS WIDGET (Recommend, Movies, TV Shows, 18+) ---
+  Widget _buildCategoryTabs() {
+    final tabs = ['Recommend', 'Movies', 'TV Shows', '18+'];
+    return Container(
+      height: 40,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        itemCount: tabs.length,
+        itemBuilder: (ctx, i) {
+          final tab = tabs[i];
+          final isSelected = _selectedTab == tab;
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _selectedTab = tab;
+              });
+            },
+            child: Container(
+              alignment: Alignment.center,
+              margin: const EdgeInsets.only(right: 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    tab,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.white54,
+                      fontSize: 15,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  if (isSelected)
+                    Container(
+                      height: 2,
+                      width: 24,
+                      color: const Color(0xFFE50914), // Primeflix Red indicator
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // --- STREAMING PROVIDERS LOGO ROW (Netflix, JioHotstar, Amazon) ---
+  Widget _buildStreamingProvidersRow() {
+    final providers = [
+      {'name': 'Netflix', 'color': const Color(0xFFE50914)},
+      {'name': 'JioHotstar', 'color': const Color(0xFF0072D2)},
+      {'name': 'Prime Video', 'color': const Color(0xFF00A8E1)},
+      {'name': 'ZEE5', 'color': const Color(0xFF8C1159)},
+    ];
+
+    return Container(
+      height: 60,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        itemCount: providers.length,
+        itemBuilder: (ctx, i) {
+          final p = providers[i];
+          return Container(
+            width: 110,
+            margin: const EdgeInsets.only(right: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF16181F),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white12),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              p['name'] as String,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -866,8 +959,17 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // 1. Primeflix Top Tabs (Recommend, Movies, TV Shows, 18+)
+                    _buildCategoryTabs(),
+                    const SizedBox(height: 4),
+
+                    // 2. Top Featured Slider / Banner
                     _buildTopFeaturedCarousel(),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
+
+                    // 3. Streaming Providers Row (Netflix, Hotstar, Amazon)
+                    _buildStreamingProvidersRow(),
+                    const SizedBox(height: 8),
 
                     if (continueWatchingList.isNotEmpty) ...[
                       _buildHeader('Continue Watching'),
@@ -875,7 +977,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                       const SizedBox(height: 12),
                     ],
 
-                    _buildHeader('Bollywood Latest Movies'),
+                    _buildHeader('Trending Now / Bollywood Latest'),
                     _buildHorizontalRow(bollywoodLatest),
                     const SizedBox(height: 12),
 
