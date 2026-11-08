@@ -79,7 +79,7 @@ class _StreamModalState extends State<StreamModal> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => InternalPlayerScreen(videoUrl: stream['url']),
+                                  builder: (_) => InternalPlayerScreen(url: stream['url']),
                                 ),
                               );
                             },
