@@ -32,18 +32,20 @@ jobs:
           cd mobile_version
           flutter create . --platforms=android --org com.example.primefilx
 
-      - name: Fix Gradle Wrapper Distribution
-        run: |
-          cd mobile_version/android
-          if [ -f "gradle/wrapper/gradle-wrapper.properties" ]; then
-            sed -i 's/gradle-7.5-all.zip/gradle-8.3-bin.zip/g' gradle/wrapper/gradle-wrapper.properties
-          fi
-
-      - name: Install Dependencies & Build APK
+      - name: Install Dependencies & Build APK with Retry
         run: |
           cd mobile_version
           flutter pub get
-          flutter build apk --release
+          
+          # Try building up to 3 times in case of network timeouts
+          n=0
+          until [ "$n" -ge 3 ]
+          do
+            flutter build apk --release && break
+            n=$((n+1))
+            echo "Build failed, retrying ($n/3)..."
+            sleep 10
+          done
 
       - name: Create Release and Upload APK
         uses: softprops/action-gh-release@v2
