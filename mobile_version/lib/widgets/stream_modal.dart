@@ -12,7 +12,7 @@ class StreamModal extends StatefulWidget {
 
 class _StreamModalState extends State<StreamModal> {
   bool _isLoading = true;
-  List _streams = [];
+  List> _streams = [];
 
   @override
   void initState() {
@@ -79,7 +79,7 @@ class _StreamModalState extends State<StreamModal> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => InternalPlayerScreen(url: stream['url']),
+                                  builder: (_) => InternalPlayerScreen(videoUrl: stream['url']),
                                 ),
                               );
                             },
