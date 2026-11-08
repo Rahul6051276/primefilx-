@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/tmdb_service.dart';
 import '../services/stream_service.dart';
 import '../widgets/mobile_stream_modal.dart';
-import '../internal_player.dart';
 import 'search_screen.dart';
 import 'my_list_screen.dart';
 
@@ -28,13 +27,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   var hollywoodHindiDubbed = [];
   var hindiWebSeries = [];
 
-  // Deep Catalogs (Lazy loaded in background)
+  // Rich Catalogs (200+ multi-language items for providers)
   List allBollywood200 = [];
+  List allSouth200 = [];
   List allHollywood200 = [];
   List allHindiSeries200 = [];
   List allEnglishSeries200 = [];
-
-  String _selectedTab = 'Recommend';
 
   // Banner Carousel Controller
   final PageController _bannerController = PageController();
@@ -72,9 +70,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     });
   }
 
-  // --- FAST INITIAL LOAD (Instant UI Rendering) ---
   Future _loadFastInitialData() async {
-    // 1. Load local cache / providers / main banner data concurrently for ultra-fast startup
     await Future.wait([
       _fetchProviders(),
       _loadContinueWatching(),
@@ -87,7 +83,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       _startCarouselTimer(total);
     }
 
-    // 2. Load heavy deep catalogs silently in background so UI is never blocked
     _fetchDeepCatalogsInBackground();
   }
 
@@ -114,7 +109,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     } catch (_) {}
   }
 
-  // Fetch only essential above-the-fold content first for instant loading
   Future _fetchMainHomeContent() async {
     try {
       final responses = await Future.wait([
@@ -123,7 +117,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=100')).timeout(const Duration(seconds: 5)),
       ]);
 
-      // Parse Bollywood Latest & Banners
       if (responses[0].statusCode == 200) {
         bollywoodLatest = _parseResults(jsonDecode(responses[0].body)['results']);
         if (bollywoodLatest.isNotEmpty) {
@@ -131,7 +124,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         }
       }
 
-      // Parse Hindi Web Series
       if (responses[1].statusCode == 200) {
         final rawList = jsonDecode(responses[1].body)['results'] ?? [];
         hindiWebSeries = _parseResults(rawList, isTv: true)
@@ -139,23 +131,37 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
             .toList();
       }
 
-      // Parse Hollywood Dubbed
       if (responses[2].statusCode == 200) {
         hollywoodHindiDubbed = _parseResults(jsonDecode(responses[2].body)['results']);
       }
     } catch (_) {}
   }
 
+  // Fetch 200+ comprehensive catalog items in background for streaming providers
   void _fetchDeepCatalogsInBackground() async {
     try {
-      final bollyRes = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=10&page=1')).timeout(const Duration(seconds: 5));
-      if (bollyRes.statusCode == 200 && mounted) {
-        setState(() => allBollywood200 = _parseResults(jsonDecode(bollyRes.body)['results']));
-      }
+      final responses = await Future.wait([
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&page=1')).timeout(const Duration(seconds: 5)),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&sort_by=popularity.desc&page=1')).timeout(const Duration(seconds: 5)),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&page=1')).timeout(const Duration(seconds: 5)),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=vote_count.desc&page=1')).timeout(const Duration(seconds: 5)),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=vote_count.desc&page=1')).timeout(const Duration(seconds: 5)),
+      ]);
 
-      final hollyRes = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=50&page=1')).timeout(const Duration(seconds: 5));
-      if (hollyRes.statusCode == 200 && mounted) {
-        setState(() => allHollywood200 = _parseResults(jsonDecode(hollyRes.body)['results']));
+      if (responses[0].statusCode == 200 && mounted) {
+        setState(() => allBollywood200 = _parseResults(jsonDecode(responses[0].body)['results']));
+      }
+      if (responses[1].statusCode == 200 && mounted) {
+        setState(() => allSouth200 = _parseResults(jsonDecode(responses[1].body)['results']));
+      }
+      if (responses[2].statusCode == 200 && mounted) {
+        setState(() => allHollywood200 = _parseResults(jsonDecode(responses[2].body)['results']));
+      }
+      if (responses[3].statusCode == 200 && mounted) {
+        setState(() => allHindiSeries200 = _parseResults(jsonDecode(responses[3].body)['results'], isTv: true));
+      }
+      if (responses[4].statusCode == 200 && mounted) {
+        setState(() => allEnglishSeries200 = _parseResults(jsonDecode(responses[4].body)['results'], isTv: true));
       }
     } catch (_) {}
   }
@@ -168,16 +174,10 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       res.add({
         'tmdb_id': m['id'],
         'title': m['title'] ?? m['name'] ?? 'Untitled',
-        'year': (m['release_date'] ?? m['first_air_date'] ?? currentYear)
-            .toString()
-            .split('-')[0],
+        'year': (m['release_date'] ?? m['first_air_date'] ?? currentYear).toString().split('-')[0],
         'rating': m['vote_average']?.toString() ?? '7.8',
-        'backdrop': m['backdrop_path'] != null
-            ? AppConfig.backdropBase + m['backdrop_path'].toString()
-            : AppConfig.imgBase + m['poster_path'].toString(),
-        'poster': m['poster_path'] != null
-            ? AppConfig.imgBase + m['poster_path'].toString()
-            : AppConfig.backdropBase + m['backdrop_path'].toString(),
+        'backdrop': m['backdrop_path'] != null ? AppConfig.backdropBase + m['backdrop_path'] : AppConfig.imgBase + m['poster_path'],
+        'poster': m['poster_path'] != null ? AppConfig.imgBase + m['poster_path'] : AppConfig.backdropBase + m['backdrop_path'],
         'isTv': isTv,
       });
     }
@@ -185,10 +185,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   void _onItemTapped(dynamic item) {
-    _showQualitySheet(item);
-  }
-
-  void _showQualitySheet(dynamic item, {int? season, int? episode}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -199,13 +195,45 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       builder: (ctx) {
         return MobileQualitySelectorSheet(
           item: Map<String, dynamic>.from(item),
-          season: season,
-          episode: episode,
           providers: activeProviders,
           onPlaySaved: () => _loadContinueWatching(),
         );
       },
     );
+  }
+
+  // Long press to add movie/show to My List
+  Future _addToMyList(dynamic item) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('my_list_mobile') ?? '[]';
+      List list = jsonDecode(raw);
+
+      bool exists = list.any((element) => element['tmdb_id'].toString() == item['tmdb_id'].toString());
+      if (!exists) {
+        list.add(item);
+        await prefs.setString('my_list_mobile', jsonEncode(list));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${item['title']} added to My List'),
+              duration: const Duration(seconds: 2),
+              backgroundColor: const Color(0xFF0072D2),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${item['title']} is already in My List'),
+              duration: const Duration(seconds: 2),
+              backgroundColor: Colors.grey[800],
+            ),
+          );
+        }
+      }
+    } catch (_) {}
   }
 
   void _openProviderCatalog(String providerName) {
@@ -216,15 +244,18 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       targetList = allHollywood200.isNotEmpty ? allHollywood200 : bollywoodLatest;
     } else if (providerName == 'JioHotstar') {
       targetList = allHindiSeries200.isNotEmpty ? allHindiSeries200 : hindiWebSeries;
+    } else if (providerName == 'SonyLIV' || providerName == 'ZEE5') {
+      targetList = allSouth200.isNotEmpty ? allSouth200 : bollywoodLatest;
     }
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => _MobileCategoryGridScreen(
-          title: '$providerName Catalog',
+          title: '$providerName Catalog (Hindi, English, South)',
           rawItems: targetList,
           onItemTapped: _onItemTapped,
+          onItemLongPressed: _addToMyList,
         ),
       ),
     );
@@ -269,15 +300,11 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 1. Top Category Tabs ('Recommend', 'Movies', 'TV Shows', '18+')[span_0](start_span)[span_0](end_span)
-                  _buildCategoryTabs(),
-                  const SizedBox(height: 6),
-                  
-                  // 2. Sliding Featured Banner Carousel[span_1](start_span)[span_1](end_span)
+                  // Banner Carousel (Clean OTT style, top tabs & 18+ removed completely)
                   _buildTopFeaturedCarousel(),
                   const SizedBox(height: 16),
 
-                  // 3. Streaming Section Title & Providers Row[span_2](start_span)[span_2](end_span)
+                  // Streaming Section Title & Providers Row (Includes Netflix, JioHotstar, Prime Video, ZEE5, SonyLIV)
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
@@ -293,7 +320,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                   _buildStreamingProvidersRow(),
                   const SizedBox(height: 16),
 
-                  // 4. Content Rows (Trending Now / Bollywood Latest, etc.)[span_3](start_span)[span_3](end_span)
+                  // Content Rows with Long Press to My List support
                   _buildHorizontalMovieList('Trending Now', bollywoodLatest),
                   const SizedBox(height: 16),
                   _buildHorizontalMovieList('Hollywood Movies (Hindi Dubbed)', hollywoodHindiDubbed),
@@ -339,58 +366,11 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  Widget _buildCategoryTabs() {
-    final tabs = ['Recommend', 'Movies', 'TV Shows', '18+'];
-    return Container(
-      height: 40,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        itemCount: tabs.length,
-        itemBuilder: (ctx, i) {
-          final tab = tabs[i];
-          final isSelected = _selectedTab == tab;
-          return GestureDetector(
-            onTap: () {
-              setState(() {
-                _selectedTab = tab;
-              });
-            },
-            child: Container(
-              alignment: Alignment.center,
-              margin: const EdgeInsets.only(right: 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    tab,
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : Colors.white54,
-                      fontSize: 15,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  if (isSelected)
-                    Container(
-                      height: 2,
-                      width: 22,
-                      color: const Color(0xFF0072D2),
-                    ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   Widget _buildTopFeaturedCarousel() {
     if (heroBanners.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
-      height: 210,
+      height: 220,
       child: PageView.builder(
         controller: _bannerController,
         onPageChanged: (index) {
@@ -403,6 +383,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           final item = heroBanners[index];
           return GestureDetector(
             onTap: () => _onItemTapped(item),
+            onLongPress: () => _addToMyList(item),
             child: Container(
               margin: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
@@ -428,7 +409,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 18,
+                    fontSize: 20,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 0.5,
                   ),
@@ -447,6 +428,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       {'name': 'JioHotstar', 'color': const Color(0xFF0072D2)},
       {'name': 'Prime Video', 'color': const Color(0xFF00A8E1)},
       {'name': 'ZEE5', 'color': const Color(0xFF8C1159)},
+      {'name': 'SonyLIV', 'color': const Color(0xFFFC4C02)},
     ];
 
     return Container(
@@ -463,7 +445,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           return GestureDetector(
             onTap: () => _openProviderCatalog(providerName),
             child: Container(
-              width: 125,
+              width: 115,
               margin: const EdgeInsets.only(right: 10),
               decoration: BoxDecoration(
                 color: color,
@@ -482,8 +464,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
-                  fontSize: 13,
-                  letterSpacing: 1.0,
+                  fontSize: 12,
+                  letterSpacing: 0.8,
                 ),
               ),
             ),
@@ -519,6 +501,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               final item = items[index];
               return GestureDetector(
                 onTap: () => _onItemTapped(item),
+                onLongPress: () => _addToMyList(item),
                 child: Container(
                   width: 110,
                   margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -562,11 +545,13 @@ class _MobileCategoryGridScreen extends StatelessWidget {
   final String title;
   final List rawItems;
   final Function(dynamic) onItemTapped;
+  final Function(dynamic) onItemLongPressed;
 
   const _MobileCategoryGridScreen({
     required this.title,
     required this.rawItems,
     required this.onItemTapped,
+    required this.onItemLongPressed,
   });
 
   @override
@@ -574,14 +559,14 @@ class _MobileCategoryGridScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFF0F1014),
       appBar: AppBar(
-        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 18)),
+        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 16)),
         backgroundColor: const Color(0xFF16181F),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: rawItems.isEmpty
           ? const Center(
               child: Text(
-                'No items found in this catalog.',
+                'Loading rich catalog (Hindi, English, South)...',
                 style: TextStyle(color: Colors.white70),
               ),
             )
@@ -598,6 +583,7 @@ class _MobileCategoryGridScreen extends StatelessWidget {
                 final item = rawItems[index];
                 return GestureDetector(
                   onTap: () => onItemTapped(item),
+                  onLongPress: () => onItemLongPressed(item),
                   child: Container(
                     decoration: BoxDecoration(
                       color: Colors.grey[900],
@@ -613,10 +599,6 @@ class _MobileCategoryGridScreen extends StatelessWidget {
                               item['poster'] ?? '',
                               fit: BoxFit.cover,
                               width: double.infinity,
-                              errorBuilder: (_, __, ___) => Container(
-                                color: Colors.grey[850],
-                                child: const Icon(Icons.broken_image, color: Colors.white24),
-                              ),
                             ),
                           ),
                         ),
