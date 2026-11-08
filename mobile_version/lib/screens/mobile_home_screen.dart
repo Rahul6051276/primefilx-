@@ -206,8 +206,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                             ),
                             alignment: Alignment.center,
                             child: Text(
-                              provider['logo'],
-                              style: TextStyle(color: provider['color'], fontSize: 16, fontWeight: FontWeight.bold),
+                              provider['logo'] as String? ?? '',
+                              style: TextStyle(color: provider['color'] as Color? ?? Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                             ),
                           );
                         },
