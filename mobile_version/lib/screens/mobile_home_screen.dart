@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/tmdb_service.dart';
-import '../services/stream_service.dart';
-import '../internal_player.dart';
+import '../widgets/stream_modal.dart';
+import 'search_screen.dart';
+import 'my_list_screen.dart';
 
 class MobileHomeScreen extends StatefulWidget {
   const MobileHomeScreen({Key? key}) : super(key: key);
@@ -13,11 +15,11 @@ class MobileHomeScreen extends StatefulWidget {
 class _MobileHomeScreenState extends State<MobileHomeScreen> {
   List<dynamic> _trendingMovies = [];
   bool _isLoading = true;
-  String _selectedTab = 'Recommend';
-
-  final List<String> _tabs = ['Recommend', 'Movies', 'TV Shows', '18+'];
+  int _currentIndex = 0; // Bottom nav index
   
-  // Streaming Category Providers Row
+  final PageController _pageController = PageController();
+  Timer? _sliderTimer;
+
   final List> _providers = [
     {'name': 'Netflix', 'color': Colors.red, 'logo': 'NETFLIX'},
     {'name': 'JioHotstar', 'color': Colors.deepPurple, 'logo': 'JioHotstar'},
@@ -30,32 +32,60 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     _loadData();
   }
 
+  @override
+  void dispose() {
+    _sliderTimer?.cancel();
+    _pageController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadData() async {
     final results = await TmdbService.fetchTrending();
     setState(() {
       _trendingMovies = results;
       _isLoading = false;
     });
+
+    if (_trendingMovies.isNotEmpty) {
+      _startAutoSlider();
+    }
   }
 
-  Future<void> _handleItemTap(dynamic item) async {
-    var streams = await MobileStreamService.getDirectStreams(item: item);
-    if (streams.isNotEmpty && mounted) {
-      final streamUrl = streams.first['url']!;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => InternalPlayerScreen(
-            streamUrl: streamUrl,
-            title: item['title'] ?? item['name'] ?? 'Movie',
-          ),
-        ),
-      );
-    }
+  void _startAutoSlider() {
+    _sliderTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
+      if (_pageController.hasClients && _trendingMovies.isNotEmpty) {
+        int nextPage = (_pageController.page?.round() ?? 0) + 1;
+        if (nextPage >= 5 || nextPage >= _trendingMovies.length) {
+          nextPage = 0;
+        }
+        _pageController.animateToPage(
+          nextPage,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
+  }
+
+  void _handleItemTap(dynamic item) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StreamModal(item: item),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_currentIndex == 3) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: const MyListScreen(),
+        bottomNavigationBar: _buildBottomNavigationBar(),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: _isLoading
@@ -71,19 +101,25 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                       child: Row(
                         children: [
                           Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[900],
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const TextField(
-                                style: TextStyle(color: Colors.white),
-                                decoration: InputDecoration(
-                                  hintText: 'Search',
-                                  hintStyle: TextStyle(color: Colors.grey),
-                                  icon: Icon(Icons.search, color: Colors.grey),
-                                  border: InputBorder.none,
+                            child: GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const SearchScreen()),
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[900],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.search, color: Colors.grey),
+                                    SizedBox(width: 8),
+                                    Text('Search', style: TextStyle(color: Colors.grey, fontSize: 16)),
+                                  ],
                                 ),
                               ),
                             ),
@@ -95,78 +131,58 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                         ],
                       ),
                     ),
-                    // Tabs Row
-                    SizedBox(
-                      height: 40,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        itemCount: _tabs.length,
-                        itemBuilder: (context, index) {
-                          final tab = _tabs[index];
-                          final isSelected = tab == _selectedTab;
-                          return GestureDetector(
-                            onTap: () => setState(() => _selectedTab = tab),
-                            child: Container(
-                              alignment: Alignment.center,
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              margin: const EdgeInsets.only(right: 8),
-                              decoration: BoxDecoration(
-                                border: isSelected
-                                    ? const Border(bottom: BorderSide(color: Colors.white, width: 2))
-                                    : null,
-                              ),
-                              child: Text(
-                                tab,
-                                style: TextStyle(
-                                  color: isSelected ? Colors.white : Colors.grey,
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
                     const SizedBox(height: 10),
-                    // Featured Banner Section
+                    // Auto-Sliding Featured Banner Section (Clean, without top tabs)
                     if (_trendingMovies.isNotEmpty)
-                      Container(
-                        height: 200,
-                        width: double.infinity,
-                        margin: const EdgeInsets.symmetric(horizontal: 12),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              Image.network(
-                                'https://image.tmdb.org/t/p/original${_trendingMovies[0]['backdrop_path'] ?? _trendingMovies[0]['poster_path']}',
-                                fit: BoxFit.cover,
-                              ),
-                              Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
+                      SizedBox(
+                        height: 220,
+                        child: PageView.builder(
+                          controller: _pageController,
+                          itemCount: _trendingMovies.length > 5 ? 5 : _trendingMovies.length,
+                          itemBuilder: (context, index) {
+                            final movie = _trendingMovies[index];
+                            final backdrop = movie['backdrop_path'] ?? movie['poster_path'];
+                            return GestureDetector(
+                              onTap: () => _handleItemTap(movie),
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 12),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      if (backdrop != null)
+                                        Image.network(
+                                          'https://image.tmdb.org/t/p/original$backdrop',
+                                          fit: BoxFit.cover,
+                                        ),
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        bottom: 12,
+                                        left: 12,
+                                        child: Text(
+                                          movie['title'] ?? movie['name'] ?? '',
+                                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
-                              Positioned(
-                                bottom: 12,
-                                left: 12,
-                                child: Text(
-                                  _trendingMovies[0]['title'] ?? _trendingMovies[0]['name'] ?? '',
-                                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ],
-                          ),
+                            );
+                          },
                         ),
                       ),
                     const SizedBox(height: 20),
-                    // Streaming Category Icons Row (Netflix, JioHotstar, etc.)
+                    // Streaming Category Providers Row
                     const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 12.0),
                       child: Text('Streaming', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
@@ -235,6 +251,28 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 ),
               ),
             ),
+      bottomNavigationBar: _buildBottomNavigationBar(),
+    );
+  }
+
+  Widget _buildBottomNavigationBar() {
+    return BottomNavigationBar(
+      backgroundColor: Colors.black,
+      selectedItemColor: Colors.red,
+      unselectedItemColor: Colors.grey,
+      currentIndex: _currentIndex,
+      type: BottomNavigationBarType.fixed,
+      onTap: (index) {
+        setState(() {
+          _currentIndex = index;
+        });
+      },
+      items: const [
+        BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+        BottomNavigationBarItem(icon: Icon(Icons.sort), label: 'Sort'),
+        BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Ranking'),
+        BottomNavigationBarItem(icon: Icon(Icons.list), label: 'My List'),
+      ],
     );
   }
 }
