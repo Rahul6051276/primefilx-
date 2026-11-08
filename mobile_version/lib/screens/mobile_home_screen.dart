@@ -69,7 +69,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   Future _loadFastInitialData() async {
-    // Turant false karte hain taaki screen par blank loading na aaye
     if (mounted) setState(() => isLoading = false);
 
     await Future.wait([
@@ -78,7 +77,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       _fetchMainHomeContent(),
     ]);
 
-    _fetchProviderCatalogsInBackground();
+    // Background fetch expanded to load 200+ rich catalogs per category
+    _fetchMassiveProviderCatalogsInBackground();
   }
 
   Future _loadContinueWatching() async {
@@ -107,9 +107,9 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   Future _fetchMainHomeContent() async {
     try {
       final responses = await Future.wait([
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=10')).timeout(const Duration(seconds: 5)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&without_genres=10766&sort_by=vote_count.desc&vote_count.gte=10')).timeout(const Duration(seconds: 5)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=100')).timeout(const Duration(seconds: 5)),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=5')).timeout(const Duration(seconds: 5)),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&without_genres=10766&sort_by=vote_count.desc&vote_count.gte=5')).timeout(const Duration(seconds: 5)),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&vote_count.gte=50')).timeout(const Duration(seconds: 5)),
       ]);
 
       if (responses[0].statusCode == 200) {
@@ -135,50 +135,58 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     } catch (_) {}
   }
 
-  void _fetchProviderCatalogsInBackground() async {
+  void _fetchMassiveProviderCatalogsInBackground() async {
     try {
-      final netflixRes = await Future.wait([
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=vote_count.desc&page=1')),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&page=1')),
-      ]);
+      // Fetch multiple pages (1 to 5) concurrently to ensure 200+ items per category
+      List<Future<http.Response>> netflixFutures = [];
+      List<Future<http.Response>> primeFutures = [];
+      List<Future<http.Response>> hotstarFutures = [];
+      List<Future<http.Response>> regionalFutures = [];
+
+      for (int p = 1; p <= 5; p++) {
+        netflixFutures.add(http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=vote_count.desc&page=$p')));
+        netflixFutures.add(http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&page=$p')));
+
+        primeFutures.add(http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&page=$p')));
+        primeFutures.add(http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_genres=10759&sort_by=vote_count.desc&page=$p')));
+
+        hotstarFutures.add(http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&page=$p')));
+        hotstarFutures.add(http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=vote_average.desc&page=$p')));
+
+        regionalFutures.add(http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&sort_by=popularity.desc&page=$p')));
+        regionalFutures.add(http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_genres=18&sort_by=vote_count.desc&page=$p')));
+      }
+
+      final nResponses = await Future.wait(netflixFutures);
       var nList = [];
-      for (var r in netflixRes) {
+      for (var r in nResponses) {
         if (r.statusCode == 200) {
           bool isTv = r.request?.url.toString().contains('/discover/tv') ?? false;
           nList.addAll(_parseResults(jsonDecode(r.body)['results'], isTv: isTv));
         }
       }
 
-      final primeRes = await Future.wait([
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&page=1')),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_genres=10759&sort_by=vote_count.desc&page=1')),
-      ]);
+      final pResponses = await Future.wait(primeFutures);
       var pList = [];
-      for (var r in primeRes) {
+      for (var r in pResponses) {
         if (r.statusCode == 200) {
           bool isTv = r.request?.url.toString().contains('/discover/tv') ?? false;
           pList.addAll(_parseResults(jsonDecode(r.body)['results'], isTv: isTv));
         }
       }
 
-      final hotstarRes = await Future.wait([
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&page=1')),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=vote_average.desc&page=1')),
-      ]);
+      final hResponses = await Future.wait(hotstarFutures);
       var hList = [];
-      for (var r in hotstarRes) {
+      for (var r in hResponses) {
         if (r.statusCode == 200) {
           bool isTv = r.request?.url.toString().contains('/discover/tv') ?? false;
           hList.addAll(_parseResults(jsonDecode(r.body)['results'], isTv: isTv));
         }
       }
 
-      final regionalRes = await Future.wait([
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&sort_by=popularity.desc&page=1')),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_genres=18&sort_by=vote_count.desc&page=1')),
-      ]);
+      final rResponses = await Future.wait(regionalFutures);
       var rList = [];
-      for (var r in regionalRes) {
+      for (var r in rResponses) {
         if (r.statusCode == 200) {
           bool isTv = r.request?.url.toString().contains('/discover/tv') ?? false;
           rList.addAll(_parseResults(jsonDecode(r.body)['results'], isTv: isTv));
@@ -303,7 +311,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => _MobileCategoryGridScreen(
-          title: '$providerName Catalog (Movies & Web Series)',
+          title: '$providerName Catalog (${targetList.length}+ Titles)',
           rawItems: targetList,
           onItemTapped: _onItemTapped,
           onItemLongPressed: _addToMyList,
