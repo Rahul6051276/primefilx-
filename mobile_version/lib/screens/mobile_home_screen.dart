@@ -27,8 +27,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   var hollywoodHindiDubbed = [];
   var hindiWebSeries = [];
 
-  // Rich Combined Catalogs (200+ items combining movies & web series)
-  List masterCombinedCatalog = [];
+  // Provider-specific separate catalogs (Movies & Web Series mix)
+  List netflixCatalog = [];
+  List primeCatalog = [];
+  List hotstarCatalog = [];
+  List zee5Catalog = [];
+  List sonylivCatalog = [];
 
   final PageController _bannerController = PageController();
   int _currentBannerIndex = 0;
@@ -78,7 +82,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       _startCarouselTimer(total);
     }
 
-    _fetchDeepCatalogsInBackground();
+    _fetchProviderCatalogsInBackground();
   }
 
   Future _loadContinueWatching() async {
@@ -129,31 +133,73 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       if (responses[2].statusCode == 200) {
         hollywoodHindiDubbed = _parseResults(jsonDecode(responses[2].body)['results']);
       }
+      
+      if (mounted) setState(() {});
     } catch (_) {}
   }
 
-  void _fetchDeepCatalogsInBackground() async {
+  // Fetch unique, provider-specific catalogs in background (Movies & Web Series mix)
+  void _fetchProviderCatalogsInBackground() async {
     try {
-      final responses = await Future.wait([
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&page=1')).timeout(const Duration(seconds: 5)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&sort_by=popularity.desc&page=1')).timeout(const Duration(seconds: 5)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&page=1')).timeout(const Duration(seconds: 5)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=vote_count.desc&page=1')).timeout(const Duration(seconds: 5)),
-        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=vote_count.desc&page=1')).timeout(const Duration(seconds: 5)),
+      // Netflix: English series + Hindi movies
+      final netflixRes = await Future.wait([
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=vote_count.desc&page=1')),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&page=1')),
       ]);
-
-      var combined = [];
-      for (var res in responses) {
-        if (res.statusCode == 200) {
-          final data = jsonDecode(res.body)['results'] ?? [];
-          final isTv = res.request?.url.toString().contains('/discover/tv') ?? false;
-          combined.addAll(_parseResults(data, isTv: isTv));
+      var nList = [];
+      for (var r in netflixRes) {
+        if (r.statusCode == 200) {
+          bool isTv = r.request?.url.toString().contains('/discover/tv') ?? false;
+          nList.addAll(_parseResults(jsonDecode(r.body)['results'], isTv: isTv));
         }
       }
 
-      if (combined.isNotEmpty && mounted) {
+      // Prime Video: Hollywood movies + English/Hindi action series
+      final primeRes = await Future.wait([
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc&page=1')),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_genres=10759&sort_by=vote_count.desc&page=1')),
+      ]);
+      var pList = [];
+      for (var r in primeRes) {
+        if (r.statusCode == 200) {
+          bool isTv = r.request?.url.toString().contains('/discover/tv') ?? false;
+          pList.addAll(_parseResults(jsonDecode(r.body)['results'], isTv: isTv));
+        }
+      }
+
+      // JioHotstar: Hindi Web Series + Disney/Popular Movies
+      final hotstarRes = await Future.wait([
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc&page=1')),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=vote_average.desc&page=1')),
+      ]);
+      var hList = [];
+      for (var r in hotstarRes) {
+        if (r.statusCode == 200) {
+          bool isTv = r.request?.url.toString().contains('/discover/tv') ?? false;
+          hList.addAll(_parseResults(jsonDecode(r.body)['results'], isTv: isTv));
+        }
+      }
+
+      // ZEE5 & SonyLIV: South Dubbed + Regional & Drama Shows
+      final regionalRes = await Future.wait([
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&sort_by=popularity.desc&page=1')),
+        http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_genres=18&sort_by=vote_count.desc&page=1')),
+      ]);
+      var rList = [];
+      for (var r in regionalRes) {
+        if (r.statusCode == 200) {
+          bool isTv = r.request?.url.toString().contains('/discover/tv') ?? false;
+          rList.addAll(_parseResults(jsonDecode(r.body)['results'], isTv: isTv));
+        }
+      }
+
+      if (mounted) {
         setState(() {
-          masterCombinedCatalog = combined;
+          netflixCatalog = nList;
+          primeCatalog = pList;
+          hotstarCatalog = hList;
+          zee5Catalog = rList;
+          sonylivCatalog = rList;
         });
       }
     } catch (_) {}
@@ -248,7 +294,18 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   void _openProviderCatalog(String providerName) {
-    List targetList = masterCombinedCatalog.isNotEmpty ? masterCombinedCatalog : bollywoodLatest;
+    List targetList = bollywoodLatest;
+    if (providerName == 'Netflix') {
+      targetList = netflixCatalog.isNotEmpty ? netflixCatalog : bollywoodLatest;
+    } else if (providerName == 'Prime Video') {
+      targetList = primeCatalog.isNotEmpty ? primeCatalog : hollywoodHindiDubbed;
+    } else if (providerName == 'JioHotstar') {
+      targetList = hotstarCatalog.isNotEmpty ? hotstarCatalog : hindiWebSeries;
+    } else if (providerName == 'ZEE5') {
+      targetList = zee5Catalog.isNotEmpty ? zee5Catalog : bollywoodLatest;
+    } else if (providerName == 'SonyLIV') {
+      targetList = sonylivCatalog.isNotEmpty ? sonylivCatalog : bollywoodLatest;
+    }
 
     Navigator.push(
       context,
@@ -296,7 +353,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           ],
         ),
       ),
-      body: isLoading
+      body: isLoading && bollywoodLatest.isEmpty
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF0072D2)))
           : SingleChildScrollView(
               child: Column(
