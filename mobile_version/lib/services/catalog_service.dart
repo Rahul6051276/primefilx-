@@ -3,7 +3,6 @@ import 'package:http/http.dart' as http;
 import 'tmdb_service.dart';
 
 class CatalogService {
-  // Daily soap and TV serial filter blocklist
   static bool isDailySoapTitle(String title) {
     final t = title.toLowerCase();
     const blockList = [
@@ -19,8 +18,7 @@ class CatalogService {
     return blockList.any((b) => t.contains(b));
   }
 
-  // Parse results & apply strict daily soap filter
-  static List parseResults(dynamic list, {bool isTv = false}) {
+  static List<dynamic> parseResults(dynamic list, {bool isTv = false}) {
     var res = [];
     final currentYear = DateTime.now().year.toString();
     for (var m in (list ?? [])) {
@@ -42,8 +40,7 @@ class CatalogService {
     return res;
   }
 
-  // Fetch provider-specific catalogs in background with correct generics <String, List>
-  static Future> fetchMassiveCatalogs() async {
+  static Future>> fetchMassiveCatalogs() async {
     try {
       final responses = await Future.wait([
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=8&watch_region=IN&sort_by=popularity.desc')).timeout(const Duration(seconds: 6)),
