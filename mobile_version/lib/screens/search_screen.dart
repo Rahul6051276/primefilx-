@@ -67,6 +67,7 @@ class _SearchScreenState extends State<SearchScreen> {
         return MobileQualitySelectorSheet(
           item: Map<String, dynamic>.from(item),
           providers: [],
+          onPlaySaved: () {},
         );
       },
     );
