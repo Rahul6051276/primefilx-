@@ -69,7 +69,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   Future _loadFastInitialData() async {
-    setState(() => isLoading = false);
+    // Turant false karte hain taaki screen par blank loading na aaye
+    if (mounted) setState(() => isLoading = false);
 
     await Future.wait([
       _fetchProviders(),
@@ -411,7 +412,11 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           borderRadius: BorderRadius.circular(14),
         ),
         alignment: Alignment.center,
-        child: const CircularProgressIndicator(color: Color(0xFF0072D2)),
+        child: const SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0072D2)),
+        ),
       );
     }
 
