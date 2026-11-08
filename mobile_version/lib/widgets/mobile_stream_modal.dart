@@ -47,7 +47,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     if (mounted) {
       List rawList = results is List ? results : [];
       
-      // Strict filter to remove any unwanted IPTV or Xtream sources completely
+      // Strict filter to remove unwanted IPTV or Xtream sources completely
       var filteredStreams = rawList.where((s) {
         final title = (s['title'] ?? '').toString().toLowerCase();
         final server = (s['server'] ?? '').toString().toLowerCase();
