@@ -27,24 +27,14 @@ jobs:
           channel: 'stable'
           cache: false
 
-      - name: Force Gradle Version Update
+      - name: Build APK without External Gradle Download
         run: |
           cd mobile_version
           flutter create . --platforms=android
           
-          # Overwrite gradle wrapper properties to use a stable URL and prevent 504 timeout
-          PROPS="android/gradle/wrapper/gradle-wrapper.properties"
-          if [ -f "$PROPS" ]; then
-            echo "distributionBase=GRADLE_USER_HOME" > "$PROPS"
-            echo "distributionPath=wrapper/dists" >> "$PROPS"
-            echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.0-bin.zip" >> "$PROPS"
-            echo "zipStoreBase=GRADLE_USER_HOME" >> "$PROPS"
-            echo "zipStorePath=wrapper/dists" >> "$PROPS"
-          fi
-
-      - name: Install Dependencies & Build APK
-        run: |
-          cd mobile_version
+          # Remove gradle wrapper properties so it uses system gradle cleanly
+          rm -f android/gradle/wrapper/gradle-wrapper.properties
+          
           flutter pub get
           flutter build apk --release
 
