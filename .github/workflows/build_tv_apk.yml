@@ -40,6 +40,16 @@ jobs:
           sed -i '/<application/i <uses-permission android:name="android.permission.INTERNET" />' mobile_build_temp/android/app/src/main/AndroidManifest.xml
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' mobile_build_temp/android/app/src/main/AndroidManifest.xml
 
+          # FORCE GRADLE WRAPPER TO USE RELIABLE MIRROR (Bypasses 502/504 Timeouts)
+          PROPS="mobile_build_temp/android/gradle/wrapper/gradle-wrapper.properties"
+          if [ -f "$PROPS" ]; then
+            echo "distributionBase=GRADLE_USER_HOME" > "$PROPS"
+            echo "distributionPath=wrapper/dists" >> "$PROPS"
+            echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.0-bin.zip" >> "$PROPS"
+            echo "zipStoreBase=GRADLE_USER_HOME" >> "$PROPS"
+            echo "zipStorePath=wrapper/dists" >> "$PROPS"
+          fi
+
           cd mobile_build_temp
           flutter pub get
           flutter build apk --release
