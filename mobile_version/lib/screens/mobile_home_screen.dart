@@ -27,12 +27,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   var hollywoodHindiDubbed = [];
   var hindiWebSeries = [];
 
-  // Rich Catalogs for Providers
-  List allBollywood200 = [];
-  List allSouth200 = [];
-  List allHollywood200 = [];
-  List allHindiSeries200 = [];
-  List allEnglishSeries200 = [];
+  // Rich Combined Catalogs (200+ items combining movies & web series)
+  List masterCombinedCatalog = [];
 
   final PageController _bannerController = PageController();
   int _currentBannerIndex = 0;
@@ -146,20 +142,19 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=vote_count.desc&page=1')).timeout(const Duration(seconds: 5)),
       ]);
 
-      if (responses[0].statusCode == 200 && mounted) {
-        setState(() => allBollywood200 = _parseResults(jsonDecode(responses[0].body)['results']));
+      var combined = [];
+      for (var res in responses) {
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body)['results'] ?? [];
+          final isTv = res.request?.url.toString().contains('/discover/tv') ?? false;
+          combined.addAll(_parseResults(data, isTv: isTv));
+        }
       }
-      if (responses[1].statusCode == 200 && mounted) {
-        setState(() => allSouth200 = _parseResults(jsonDecode(responses[1].body)['results']));
-      }
-      if (responses[2].statusCode == 200 && mounted) {
-        setState(() => allHollywood200 = _parseResults(jsonDecode(responses[2].body)['results']));
-      }
-      if (responses[3].statusCode == 200 && mounted) {
-        setState(() => allHindiSeries200 = _parseResults(jsonDecode(responses[3].body)['results'], isTv: true));
-      }
-      if (responses[4].statusCode == 200 && mounted) {
-        setState(() => allEnglishSeries200 = _parseResults(jsonDecode(responses[4].body)['results'], isTv: true));
+
+      if (combined.isNotEmpty && mounted) {
+        setState(() {
+          masterCombinedCatalog = combined;
+        });
       }
     } catch (_) {}
   }
@@ -182,22 +177,42 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     return res;
   }
 
+  // Intelligent handler: If it's a TV show (Web Series), show Season/Episode selector. If movie, show direct quality sheet.
   void _onItemTapped(dynamic item) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF16181F),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return MobileQualitySelectorSheet(
-          item: Map<String, dynamic>.from(item),
-          providers: activeProviders,
-          onPlaySaved: () => _loadContinueWatching(),
-        );
-      },
-    );
+    bool isTv = item['isTv'] == true;
+
+    if (isTv) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF16181F),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) {
+          return _MobileSeasonEpisodeSelectorSheet(
+            item: Map<String, dynamic>.from(item),
+            activeProviders: activeProviders,
+          );
+        },
+      );
+    } else {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF16181F),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) {
+          return MobileQualitySelectorSheet(
+            item: Map<String, dynamic>.from(item),
+            providers: activeProviders,
+            onPlaySaved: () => _loadContinueWatching(),
+          );
+        },
+      );
+    }
   }
 
   Future _addToMyList(dynamic item) async {
@@ -234,22 +249,13 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   void _openProviderCatalog(String providerName) {
-    List targetList = allBollywood200.isNotEmpty ? allBollywood200 : bollywoodLatest;
-    if (providerName == 'Netflix') {
-      targetList = allEnglishSeries200.isNotEmpty ? allEnglishSeries200 : bollywoodLatest;
-    } else if (providerName == 'Prime Video') {
-      targetList = allHollywood200.isNotEmpty ? allHollywood200 : bollywoodLatest;
-    } else if (providerName == 'JioHotstar') {
-      targetList = allHindiSeries200.isNotEmpty ? allHindiSeries200 : hindiWebSeries;
-    } else if (providerName == 'SonyLIV' || providerName == 'ZEE5') {
-      targetList = allSouth200.isNotEmpty ? allSouth200 : bollywoodLatest;
-    }
+    List targetList = masterCombinedCatalog.isNotEmpty ? masterCombinedCatalog : bollywoodLatest;
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => _MobileCategoryGridScreen(
-          title: '$providerName Catalog (Hindi, English, South)',
+          title: '$providerName Catalog (Movies & Web Series)',
           rawItems: targetList,
           onItemTapped: _onItemTapped,
           onItemLongPressed: _addToMyList,
@@ -322,7 +328,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 ],
               ),
             ),
-      // Clean Bottom Navigation Bar with ONLY Home and My List
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: const Color(0xFF0F1014),
         type: BottomNavigationBarType.fixed,
@@ -522,6 +527,122 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// Season & Episode Selector for Web Series
+class _MobileSeasonEpisodeSelectorSheet extends StatefulWidget {
+  final Map<String, dynamic> item;
+  final List activeProviders;
+
+  const _MobileSeasonEpisodeSelectorSheet({
+    required this.item,
+    required this.activeProviders,
+  });
+
+  @override
+  State<_MobileSeasonEpisodeSelectorSheet> createState() => _MobileSeasonEpisodeSelectorSheetState();
+}
+
+class _MobileSeasonEpisodeSelectorSheetState extends State<_MobileSeasonEpisodeSelectorSheet> {
+  int selectedSeason = 1;
+  int selectedEpisode = 1;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      constraints: const BoxConstraints(maxHeight: 450),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.between,
+            children: [
+              Expanded(
+                child: Text(
+                  widget.item['title'] ?? 'Web Series',
+                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white54),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text('Select Season', style: TextStyle(color: Colors.white70, fontSize: 14)),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 40,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: 5, // Seasons 1 to 5
+              itemBuilder: (ctx, i) {
+                int sNum = i + 1;
+                bool isSelected = selectedSeason == sNum;
+                return GestureDetector(
+                  onTap: () => setState(() => selectedSeason = sNum),
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: isSelected ? const Color(0xFF0072D2) : Colors.grey[850],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text('Season $sNum', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text('Select Episode', style: TextStyle(color: Colors.white70, fontSize: 14)),
+          const SizedBox(height: 8),
+          Expanded(
+            child: ListView.builder(
+              itemCount: 10, // Episodes 1 to 10 per season
+              itemBuilder: (ctx, i) {
+                int eNum = i + 1;
+                bool isSelected = selectedEpisode == eNum;
+                return ListTile(
+                  tileColor: isSelected ? const Color(0xFF0072D2).withOpacity(0.3) : Colors.transparent,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  title: Text('Episode $eNum', style: const TextStyle(color: Colors.white)),
+                  trailing: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFF0072D2)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    // Pass selected season and episode into quality selector / player
+                    var updatedItem = Map<String, dynamic>.from(widget.item);
+                    updatedItem['title'] = "${widget.item['title']} - S${selectedSeason}E$eNum";
+
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: const Color(0xFF16181F),
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                      ),
+                      builder: (modalCtx) {
+                        return MobileQualitySelectorSheet(
+                          item: updatedItem,
+                          providers: widget.activeProviders,
+                          onPlaySaved: () {},
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
