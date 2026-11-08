@@ -43,7 +43,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   dynamic topLiveChannel;
   bool isLiveSportsLoading = true;
 
-  // Primeflix Top Tabs State ('Recommend', 'Movies', 'TV Shows', '18+')[span_1](start_span)[span_1](end_span)
+  // Primeflix Top Tabs State ('Recommend', 'Movies', 'TV Shows', '18+')
   String _selectedTab = 'Recommend';
 
   // Banner Carousel Controller
@@ -400,7 +400,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  // --- PRIMEFLIX TOP TABS WIDGET (`Recommend`, `Movies`, `TV Shows`, `18+`)[span_2](start_span)[span_2](end_span) ---
   Widget _buildCategoryTabs() {
     final tabs = ['Recommend', 'Movies', 'TV Shows', '18+'];
     return Container(
@@ -449,7 +448,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  // --- STREAMING PROVIDERS LOGO ROW[span_3](start_span)[span_3](end_span) ---
   Widget _buildStreamingProvidersRow() {
     final providers = [
       {'name': 'Netflix', 'color': const Color(0xFFE50914)},
@@ -799,7 +797,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  // SIDE DRAWER
   Widget _buildAppDrawer() {
     return Drawer(
       backgroundColor: const Color(0xFF07080B),
@@ -1032,7 +1029,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               ),
             ],
           ),
-          // Search button upar (top right) set hai
           actions: [
             IconButton(
               icon: const Icon(Icons.search_rounded, color: Colors.white, size: 26),
@@ -1103,7 +1099,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 ),
               ),
             ),
-      // Bottom navigation bar mein niche Home, Menu aur My List hain[span_4](start_span)[span_4](end_span)
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: const Color(0xFF0F1014),
         type: BottomNavigationBarType.fixed,
@@ -1112,10 +1107,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         currentIndex: 0,
         onTap: (index) {
           if (index == 1) {
-            // Menu / Drawer open
             _scaffoldKey.currentState?.openDrawer();
           } else if (index == 2) {
-            // My List
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const MyListScreen()),
@@ -1141,7 +1134,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 }
 
-// 200+ POSTER GRID SCREEN WITH FILTER TOGGLE
 class _MobileCategoryGridScreen extends StatefulWidget {
   final String title;
   final List rawItems;
@@ -1279,4 +1271,4 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
             ),
     );
   }
-} 
+}
