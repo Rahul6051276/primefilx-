@@ -15,7 +15,7 @@ class MobileHomeScreen extends StatefulWidget {
 class _MobileHomeScreenState extends State<MobileHomeScreen> {
   List<dynamic> _trendingMovies = [];
   bool _isLoading = true;
-  int _currentIndex = 0; // Bottom nav index
+  int _currentIndex = 0;
   
   final PageController _pageController = PageController();
   Timer? _sliderTimer;
@@ -95,7 +95,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Top Search & Icons Bar
                     Padding(
                       padding: const EdgeInsets.all(12.0),
                       child: Row(
@@ -132,7 +131,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    // Auto-Sliding Featured Banner Section (Clean, without top tabs)
                     if (_trendingMovies.isNotEmpty)
                       SizedBox(
                         height: 220,
@@ -182,7 +180,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                         ),
                       ),
                     const SizedBox(height: 20),
-                    // Streaming Category Providers Row
                     const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 12.0),
                       child: Text('Streaming', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
@@ -214,7 +211,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    // Trending Now Section
                     const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 12.0),
                       child: Text('Trending Now', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
