@@ -27,32 +27,11 @@ jobs:
           channel: 'stable'
           cache: false
 
-      - name: Prepare Clean Android Project
-        run: |
-          cd mobile_version
-          flutter create . --platforms=android --org com.example.primefilx
-
-      - name: Fix Gradle Version to Avoid 504 Timeout
-        run: |
-          cd mobile_version/android
-          if [ -f "gradle/wrapper/gradle-wrapper.properties" ]; then
-            sed -i 's/gradle-7.5-all.zip/gradle-8.3-bin.zip/g' gradle/wrapper/gradle-wrapper.properties
-            sed -i 's/gradle-7.5-bin.zip/gradle-8.3-bin.zip/g' gradle/wrapper/gradle-wrapper.properties
-          fi
-
-      - name: Install Dependencies & Build APK with Retry
+      - name: Install Dependencies & Build APK
         run: |
           cd mobile_version
           flutter pub get
-          
-          n=0
-          until [ "$n" -ge 3 ]
-          do
-            flutter build apk --release && break
-            n=$((n+1))
-            echo "Build failed, retrying ($n/3)..."
-            sleep 10
-          done
+          flutter build apk --release
 
       - name: Verify APK Existence
         run: |
