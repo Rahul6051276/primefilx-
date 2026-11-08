@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/tmdb_service.dart';
 import '../services/stream_service.dart';
-import '../services/catalog_service.dart'; // Nayi service import ki gayi hai
+import '../services/catalog_service.dart';
 import '../widgets/mobile_stream_modal.dart';
 import 'search_screen.dart';
 import 'my_list_screen.dart';
@@ -81,7 +81,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       setState(() => isLoading = false);
     }
 
-    // Background call to CatalogService
     _fetchCatalogsInBackground();
   }
 
@@ -159,7 +158,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         builder: (ctx) {
-          return _MobileSeasonEpisodeSelectorSheet(
+          return MobileSeasonEpisodeSelectorSheet(
             item: Map<String, dynamic>.from(item),
             activeProviders: activeProviders,
           );
@@ -228,7 +227,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => _MobileCategoryGridScreen(
+        builder: (_) => MobileCategoryGridScreen(
           title: '$providerName Catalog (${targetList.length}+ Titles)',
           rawItems: targetList,
           onItemTapped: _onItemTapped,
