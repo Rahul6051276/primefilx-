@@ -47,6 +47,21 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     _fetchAllStreams();
   }
 
+  // Check karein ki audio Hindi / Hindi Dubbed hai ya nahi
+  bool _isHindiAudioStream(String name) {
+    final lower = name.toLowerCase();
+    return lower.contains('hindi') ||
+        lower.contains('dubbed') ||
+        lower.contains('dual audio') ||
+        lower.contains('dual-audio') ||
+        lower.contains('multi audio') ||
+        lower.contains('multi-audio') ||
+        lower.contains('[hin]') ||
+        lower.contains('(hin)') ||
+        lower.contains('hin-') ||
+        lower.contains('hin ');
+  }
+
   String _cleanTitle(String text) {
     return text
         .toLowerCase()
@@ -55,10 +70,21 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
         .trim();
   }
 
-  bool _isTitleMatch(String vodName, String cleanQuery) {
+  bool _isStrictMatch(String vodName, String cleanQuery, String? targetYear) {
     final cleanVod = _cleanTitle(vodName);
     if (cleanVod.isEmpty || cleanQuery.isEmpty) return false;
-    return cleanVod.contains(cleanQuery) || cleanQuery.contains(cleanVod);
+
+    if (!cleanVod.contains(cleanQuery)) {
+      return false;
+    }
+
+    if (targetYear != null && targetYear.length == 4) {
+      if (vodName.contains(targetYear)) {
+        return true;
+      }
+    }
+
+    return cleanVod == cleanQuery || cleanVod.startsWith(cleanQuery);
   }
 
   Future<List<Map<String, dynamic>>> _searchXtreamStreams() async {
@@ -66,6 +92,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
 
     final title = widget.item['title'] ?? widget.item['name'] ?? '';
     final tmdbId = widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
+    final year = widget.item['year']?.toString();
     final cleanQuery = _cleanTitle(title);
     final bool isTv = widget.season != null || widget.item['isTv'] == true;
 
@@ -79,10 +106,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
       final pass = (p['xc_password'] ?? p['password'])?.toString();
       final serverName = (p['name'] ?? 'Xtream Server').toString();
 
-      if (host == null || user == null || pass == null || host.isEmpty) {
-        debugLogs.add('$serverName: Config missing');
-        continue;
-      }
+      if (host == null || user == null || pass == null || host.isEmpty) continue;
 
       if (mounted) {
         setState(() => currentStatus = 'Searching: $serverName...');
@@ -100,7 +124,6 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
               'action': 'get_vod_streams',
             });
 
-            debugLogs.add('$serverName: Fetching VOD streams...');
             final res = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 35));
 
             if (res.statusCode == 200) {
@@ -108,53 +131,54 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
               if (decoded is List) {
                 vodList = decoded;
                 _vodCache[host] = vodList;
-                debugLogs.add('$serverName: ${vodList.length} movies loaded!');
-              } else if (decoded is Map && decoded['user_info']?['auth'] == 0) {
-                debugLogs.add('$serverName: ❌ Auth Failed (Invalid username/password or expired)');
-              } else {
-                debugLogs.add('$serverName: Invalid response from server');
               }
-            } else {
-              debugLogs.add('$serverName: HTTP Status ${res.statusCode}');
             }
           }
 
           if (vodList != null && vodList.isNotEmpty) {
-            dynamic matchedVod;
+            List<dynamic> allMatches = [];
 
-            // 1. TMDB ID Match
-            if (tmdbId != null && tmdbId.isNotEmpty) {
-              matchedVod = vodList.firstWhere(
-                (v) => v['tmdb_id']?.toString() == tmdbId,
-                orElse: () => null,
-              );
+            // Saari matching movies nikalein
+            for (var v in vodList) {
+              final vName = v['name']?.toString() ?? '';
+              if (tmdbId != null && v['tmdb_id']?.toString() == tmdbId) {
+                allMatches.add(v);
+              } else if (_isStrictMatch(vName, cleanQuery, year)) {
+                allMatches.add(v);
+              }
             }
 
-            // 2. Title Match
-            if (matchedVod == null) {
-              matchedVod = vodList.firstWhere(
-                (v) => _isTitleMatch(v['name']?.toString() ?? '', cleanQuery),
-                orElse: () => null,
-              );
-            }
+            if (allMatches.isNotEmpty) {
+              // HINDI AUDIO FILTER: Hindi / Hindi Dubbed ko Sabse Upar Rank Karein
+              allMatches.sort((a, b) {
+                final aName = a['name']?.toString() ?? '';
+                final bName = b['name']?.toString() ?? '';
+                final aHindi = _isHindiAudioStream(aName);
+                final bHindi = _isHindiAudioStream(bName);
 
-            if (matchedVod != null) {
-              final streamId = matchedVod['stream_id'];
-              final ext = matchedVod['container_extension'] ?? 'mp4';
-              final streamUrl = '$host/movie/$user/$pass/$streamId.$ext';
-              final vodName = matchedVod['name']?.toString() ?? title;
-              final bool isHindi = vodName.toLowerCase().contains('hindi') || serverName.toLowerCase().contains('hindi');
-
-              debugLogs.add('✅ Found on $serverName: $vodName');
-              xtreamResults.add({
-                'title': '$title (${widget.item['year'] ?? ''})',
-                'server': serverName,
-                'url': streamUrl,
-                'isHindi': isHindi,
-                'isXtream': true,
+                if (aHindi && !bHindi) return -1; // Hindi pehle aayega
+                if (!aHindi && bHindi) return 1;
+                return 0;
               });
-            } else {
-              debugLogs.add('$serverName: Movie "$title" not in list');
+
+              // Agar Hindi version mil gaya, to Hindi version hi add karein
+              final topMatches = allMatches.take(2).toList();
+
+              for (var matchedVod in topMatches) {
+                final streamId = matchedVod['stream_id'];
+                final ext = matchedVod['container_extension'] ?? 'mp4';
+                final streamUrl = '$host/movie/$user/$pass/$streamId.$ext';
+                final realVodName = matchedVod['name']?.toString() ?? title;
+                final bool isHindi = _isHindiAudioStream(realVodName) || serverName.toLowerCase().contains('hindi');
+
+                xtreamResults.add({
+                  'title': realVodName,
+                  'server': serverName,
+                  'url': streamUrl,
+                  'isHindi': isHindi,
+                  'isXtream': true,
+                });
+              }
             }
           }
         } else {
@@ -181,13 +205,28 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
           }
 
           if (seriesList != null && seriesList.isNotEmpty) {
-            final matchedSeries = seriesList.firstWhere(
-              (s) => _isTitleMatch(s['name']?.toString() ?? '', cleanQuery),
-              orElse: () => null,
-            );
+            List<dynamic> matchedSeriesList = [];
 
-            if (matchedSeries != null) {
+            for (var s in seriesList) {
+              final sName = s['name']?.toString() ?? '';
+              if (_cleanTitle(sName).contains(cleanQuery)) {
+                matchedSeriesList.add(s);
+              }
+            }
+
+            // Series me bhi HINDI Dubbed series ko priority dein
+            matchedSeriesList.sort((a, b) {
+              final aHindi = _isHindiAudioStream(a['name']?.toString() ?? '');
+              final bHindi = _isHindiAudioStream(b['name']?.toString() ?? '');
+              if (aHindi && !bHindi) return -1;
+              if (!aHindi && bHindi) return 1;
+              return 0;
+            });
+
+            if (matchedSeriesList.isNotEmpty) {
+              final matchedSeries = matchedSeriesList.first;
               final seriesId = matchedSeries['series_id'];
+
               final infoUri = Uri.parse('$host/player_api.php').replace(queryParameters: {
                 'username': user,
                 'password': pass,
@@ -210,12 +249,14 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                     final epId = matchedEp['id'];
                     final ext = matchedEp['container_extension'] ?? 'mp4';
                     final streamUrl = '$host/series/$user/$pass/$epId.$ext';
+                    final isHindi = _isHindiAudioStream(matchedSeries['name']?.toString() ?? '') ||
+                        serverName.toLowerCase().contains('hindi');
 
                     xtreamResults.add({
-                      'title': '$title (S$seasonNum E$episodeNum)',
+                      'title': '${matchedSeries['name']} - S$seasonNum E$episodeNum',
                       'server': serverName,
                       'url': streamUrl,
-                      'isHindi': serverName.toLowerCase().contains('hindi'),
+                      'isHindi': isHindi,
                       'isXtream': true,
                     });
                   }
@@ -224,9 +265,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
             }
           }
         }
-      } catch (e) {
-        debugLogs.add('$serverName error: ${e.toString().split('\n').first}');
-      }
+      } catch (_) {}
     }
 
     return xtreamResults;
@@ -332,27 +371,9 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                   style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.info_outline, color: Colors.white38, size: 20),
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      backgroundColor: const Color(0xFF16181F),
-                      title: const Text('Server Diagnostics', style: TextStyle(color: Colors.white, fontSize: 14)),
-                      content: SingleChildScrollView(
-                        child: Text(
-                          debugLogs.join('\n\n'),
-                          style: const TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'monospace'),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           if (loading)
             Expanded(
               child: Center(
@@ -367,20 +388,9 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
               ),
             )
           else if (streams.isEmpty)
-            Expanded(
+            const Expanded(
               child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('No active streams found on servers.', style: TextStyle(color: Colors.white54)),
-                    const SizedBox(height: 10),
-                    Text(
-                      debugLogs.take(3).join('\n'),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.redAccent, fontSize: 10),
-                    ),
-                  ],
-                ),
+                child: Text('No active streams found on servers.', style: TextStyle(color: Colors.white54)),
               ),
             )
           else
@@ -399,8 +409,10 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                       color: const Color(0xFF1E2029),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: isXtream ? const Color(0xFF0072D2) : Colors.white10,
-                        width: isXtream ? 1.5 : 1.0,
+                        color: isHindi
+                            ? const Color(0xFF10B981)
+                            : (isXtream ? const Color(0xFF0072D2) : Colors.white10),
+                        width: isHindi ? 1.5 : 1.0,
                       ),
                     ),
                     child: Row(
@@ -433,7 +445,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                                         borderRadius: BorderRadius.circular(3),
                                       ),
                                       child: const Text(
-                                        'HINDI',
+                                        'HINDI AUDIO',
                                         style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.black),
                                       ),
                                     ),
