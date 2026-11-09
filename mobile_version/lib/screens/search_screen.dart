@@ -1,16 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../services/tmdb_service.dart';
 import '../widgets/mobile_stream_modal.dart';
-
-class AppConfig {
-  static const String gistUrl =
-      'https://gist.githubusercontent.com/Rahul6051276/239654d65b2124bffd0ea21b5251dc02/raw/providers.json';
-  static const String tmdbKey = 'b7cd3340a794e5a2f35e3abb820b497f';
-  static const String tmdbBase = 'https://api.themoviedb.org/3';
-  static const String imgBase = 'https://image.tmdb.org/t/p/w500';
-  static const String backdropBase = 'https://image.tmdb.org/t/p/w780';
-}
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
