@@ -45,7 +45,7 @@ class MobileStreamService {
   // ==========================================
   // 3. MAIN AGGREGATOR (BOTH RENDER + XTREAM)
   // ==========================================
-  static Future getDirectStreams({
+  static Future<List<dynamic>> getDirectStreams({
     required dynamic item,
     required dynamic providers,
     int? season,
@@ -91,7 +91,7 @@ class MobileStreamService {
               final isHindi = isHindiStream(sTitle);
 
               resolved.add({
-                'server': 'Cloud - $provName', // [Render Part Identifier]
+                'server': 'Cloud - $provName',
                 'title': sTitle,
                 'url': sUrl,
                 'isHindi': isHindi,
@@ -132,7 +132,7 @@ class MobileStreamService {
               final isHindi = isHindiStream(rawName);
 
               resolved.add({
-                'server': 'Xtream - IPTV', // [IPTV Part Identifier]
+                'server': 'Xtream - IPTV',
                 'title': isHindi ? '🎬 $rawName [Hindi Dubbed]' : '🎬 $rawName [Original]',
                 'url': streamUrl,
                 'isHindi': isHindi,
@@ -178,7 +178,7 @@ class MobileStreamService {
                       final isHindi = isHindiStream(epTitle);
 
                       resolved.add({
-                        'server': 'Xtream - IPTV Series', // [IPTV Series Identifier]
+                        'server': 'Xtream - IPTV Series',
                         'title': isHindi ? '📺 $epTitle [Hindi Dubbed]' : '📺 $epTitle [Original]',
                         'url': epUrl,
                         'isHindi': isHindi,
