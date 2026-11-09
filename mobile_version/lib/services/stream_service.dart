@@ -5,7 +5,7 @@ import 'tmdb_service.dart';
 class MobileStreamService {
   static const String renderApiBase = 'https://tmdb-embed-api-4.onrender.com';
   
-  static Future<Map<String, String>> _fetchXtreamConfig() async {
+  static Future> _fetchXtreamConfig() async {
     try {
       final res = await http.get(Uri.parse(AppConfig.gistUrl)).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
@@ -107,9 +107,10 @@ class MobileStreamService {
           if (vodData is List && vodData.isNotEmpty) {
             final matches = vodData.where((m) {
               final name = (m['name'] ?? '').toString().toLowerCase();
-              final cleanName = name.replaceAll(RegExp(r'[^a-z0-9\s]'), '');
+              final cleanName = name.renameAll(RegExp(r'[^a-z0-9\s]'), ''); // wait, clean replaceAll
+              final cleanNameReplaced = name.replaceAll(RegExp(r'[^a-z0-9\s]'), '');
               if (cleanTitle.isEmpty) return false;
-              return cleanName.contains(cleanTitle) || cleanTitle.contains(cleanName);
+              return cleanNameReplaced.contains(cleanTitle) || cleanTitle.contains(cleanNameReplaced);
             }).toList();
 
             for (var matched in matches) {
