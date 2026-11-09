@@ -3,34 +3,17 @@ import 'package:http/http.dart' as http;
 import 'tmdb_service.dart';
 
 class MobileStreamService {
-  // ==========================================
-  // 1. CONFIGURATIONS & API ENDPOINTS
-  // ==========================================
   static const String renderApiBase = 'https://tmdb-embed-api-4.onrender.com';
-  static const String gistUrl = 'https://gist.githubusercontent.com/Rahul6051276/5b0a18b2cf69a99d1d3e06629fcbc70a/raw/1da5a456a2924114e041e47a6cd16b5f6b1e4be1/TMDB%2520API';
-
-  static bool isHindiStream(String title, {String category = ''}) {
-    final lower = '$title $category'.toLowerCase();
-    return lower.contains('hindi') ||
-        lower.contains('dual') ||
-        lower.contains('multi') ||
-        lower.contains('dubbed') ||
-        lower.contains('hin') ||
-        lower.contains('dub');
-  }
-
-  // ==========================================
-  // 2. GIST CONFIG HELPER FOR XTREAM IPTV
-  // ==========================================
-  static Future _fetchXtreamConfig() async {
+  
+  static Future<Map<String, String>> _fetchXtreamConfig() async {
     try {
-      final res = await http.get(Uri.parse(gistUrl)).timeout(const Duration(seconds: 5));
+      final res = await http.get(Uri.parse(AppConfig.gistUrl)).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         return {
-          'host': data['xc_host'] ?? 'http://line.portal4k.love',
-          'username': data['xc_username'] ?? 'f4:fe:fb:81:9e:e0',
-          'password': data['xc_password'] ?? 'C9DLMNMLDR',
+          'host': (data['xc_host'] ?? data['host'] ?? 'http://line.portal4k.love').toString().trim(),
+          'username': (data['xc_username'] ?? data['username'] ?? 'f4:fe:fb:81:9e:e0').toString().trim(),
+          'password': (data['xc_password'] ?? data['password'] ?? 'C9DLMNMLDR').toString().trim(),
         };
       }
     } catch (_) {}
@@ -42,28 +25,31 @@ class MobileStreamService {
     };
   }
 
-  // ==========================================
-  // 3. MAIN AGGREGATOR (SMART MATCHING)
-  // ==========================================
-  static Future getDirectStreams({
+  static bool isHindiStream(String title, {String category = ''}) {
+    final lower = '$title $category'.toLowerCase();
+    return lower.contains('hindi') ||
+        lower.contains('dual') ||
+        lower.contains('multi') ||
+        lower.contains('dubbed') ||
+        lower.contains('hin') ||
+        lower.contains('dub');
+  }
+
+  static Future<List<dynamic>> getDirectStreams({
     required dynamic item,
     required dynamic providers,
     int? season,
     int? episode,
   }) async {
-    var resolved = [];
+    List<dynamic> resolved = [];
     final targetTmdbId = item['tmdb_id']?.toString() ?? '';
     final isTv = item['isTv'] == true;
     final movieTitle = (item['title'] ?? '').toString().toLowerCase();
-    
-    // Clean up movie title for better matching (remove special chars/year spaces)
     final cleanTitle = movieTitle.replaceAll(RegExp(r'[^a-z0-9\s]'), '').trim();
     final targetSeason = season ?? 1;
     final targetEpisode = episode ?? 1;
 
-    // ------------------------------------------
-    // PART A: RENDER CLOUD API FETCHING LOGIC
-    // ------------------------------------------
+    // 1. Render Cloud API Streams
     if (targetTmdbId.isNotEmpty) {
       try {
         final mediaType = isTv ? 'series' : 'movie';
@@ -71,11 +57,11 @@ class MobileStreamService {
             ? '$renderApiBase/api/streams/$mediaType/$targetTmdbId?season=$targetSeason&episode=$targetEpisode'
             : '$renderApiBase/api/streams/$mediaType/$targetTmdbId';
 
-        final res = await http.get(Uri.parse(apiUrl)).timeout(const Duration(seconds: 8));
+        final res = await http.get(Uri.parse(apiUrl)).timeout(const Duration(seconds: 6));
         
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body);
-          var streamList = [];
+          List streamList = [];
           if (data is List) {
             streamList = data;
           } else if (data is Map && data['streams'] != null) {
@@ -105,9 +91,7 @@ class MobileStreamService {
       } catch (_) {}
     }
 
-    // ------------------------------------------
-    // PART B: SMART XTREAM IPTV MATCHING LOGIC
-    // ------------------------------------------
+    // 2. Xtream IPTV VOD & Series Matching
     try {
       final config = await _fetchXtreamConfig();
       final xcHost = config['host']!;
@@ -115,29 +99,18 @@ class MobileStreamService {
       final xcPass = config['password']!;
 
       if (!isTv) {
-        // --- IPTV Movie / VOD Smart Search ---
         final vodUrl = '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_vod_streams';
-        final vodRes = await http.get(Uri.parse(vodUrl)).timeout(const Duration(seconds: 10));
+        final vodRes = await http.get(Uri.parse(vodUrl)).timeout(const Duration(seconds: 12));
         
         if (vodRes.statusCode == 200) {
           final vodData = jsonDecode(vodRes.body);
-          if (vodData is List) {
-            // Flexible matching: check if name contains keywords from movie title
+          if (vodData is List && vodData.isNotEmpty) {
             final matches = vodData.where((m) {
               final name = (m['name'] ?? '').toString().toLowerCase();
               final cleanName = name.replaceAll(RegExp(r'[^a-z0-9\s]'), '');
-              
-              // Match if clean name contains primary words of movie title
               if (cleanTitle.isEmpty) return false;
-              final words = cleanTitle.split(' ');
-              int matchedWords = 0;
-              for (var w in words) {
-                if (w.length > 2 && cleanName.contains(w)) {
-                  matchedWords++;
-                }
-              }
-              return matchedWords >= (words.length > 1 ? 2 : 1) || cleanName.contains(cleanTitle);
-            });
+              return cleanName.contains(cleanTitle) || cleanTitle.contains(cleanName);
+            }).toList();
 
             for (var matched in matches) {
               final streamId = matched['stream_id'];
@@ -147,8 +120,8 @@ class MobileStreamService {
               final isHindi = isHindiStream(rawName);
 
               resolved.add({
-                'server': 'Xtream - IPTV VOD',
-                'title': isHindi ? '🎬 $rawName [Hindi Dubbed]' : '🎬 $rawName [Original/Other]',
+                'server': 'Xtream - IPTV',
+                'title': isHindi ? '🎬 $rawName [Hindi Dubbed]' : '🎬 $rawName [Original]',
                 'url': streamUrl,
                 'isHindi': isHindi,
               });
@@ -156,7 +129,7 @@ class MobileStreamService {
           }
         }
       } else {
-        // --- IPTV TV Series Smart Search ---
+        // Series handling
         final seriesUrl = '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_series';
         final seriesRes = await http.get(Uri.parse(seriesUrl)).timeout(const Duration(seconds: 10));
 
@@ -208,9 +181,7 @@ class MobileStreamService {
       }
     } catch (_) {}
 
-    // ------------------------------------------
-    // PART C: FALLBACK (IF NO STREAMS FOUND)
-    // ------------------------------------------
+    // Fallback if empty
     if (resolved.isEmpty) {
       resolved.add({
         'server': 'Render Cloud Server',
@@ -222,9 +193,7 @@ class MobileStreamService {
       });
     }
 
-    // ------------------------------------------
-    // PART D: SORTING (HINDI FIRST PRIORITY)
-    // ------------------------------------------
+    // Sort Hindi first priority
     resolved.sort((a, b) => (b['isHindi'] == true ? 1 : 0).compareTo(a['isHindi'] == true ? 1 : 0));
 
     return resolved;
