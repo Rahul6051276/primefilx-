@@ -1,6 +1,14 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'tmdb_service.dart';
+
+class AppConfig {
+  static const String gistUrl =
+      'https://gist.githubusercontent.com/Rahul6051276/239654d65b2124bffd0ea21b5251dc02/raw/providers.json';
+  static const String tmdbKey = 'b7cd3340a794e5a2f35e3abb820b497f';
+  static const String tmdbBase = 'https://api.themoviedb.org/3';
+  static const String imgBase = 'https://image.tmdb.org/t/p/w500';
+  static const String backdropBase = 'https://image.tmdb.org/t/p/w780';
+}
 
 class CatalogService {
   static bool isDailySoapTitle(String title) {
@@ -40,23 +48,15 @@ class CatalogService {
     return res;
   }
 
-  // Fetching strictly latest releases using release_date sorting for 40+ items
   static Future fetchMassiveCatalogs() async {
     try {
       final responses = await Future.wait([
-        // Netflix (Provider 8) - Latest release sorting pages 1 & 2
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=8&watch_region=IN&sort_by=first_air_date.desc&page=1')),
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=8&watch_region=IN&sort_by=first_air_date.desc&page=2')),
-        
-        // Prime Video (Provider 9) - Latest release sorting pages 1 & 2
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=9&watch_region=IN&sort_by=first_air_date.desc&page=1')),
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=9&watch_region=IN&sort_by=first_air_date.desc&page=2')),
-        
-        // JioHotstar / Disney+ (Provider 337) - Latest release sorting pages 1 & 2
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=337&watch_region=IN&sort_by=first_air_date.desc&page=1')),
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=337&watch_region=IN&sort_by=first_air_date.desc&page=2')),
-        
-        // ZEE5 (Provider 232) - Latest release sorting pages 1 & 2
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_watch_providers=232&watch_region=IN&sort_by=primary_release_date.desc&page=1')),
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_watch_providers=232&watch_region=IN&sort_by=primary_release_date.desc&page=2')),
       ]);
