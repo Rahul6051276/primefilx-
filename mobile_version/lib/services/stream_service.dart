@@ -107,7 +107,6 @@ class MobileStreamService {
           if (vodData is List && vodData.isNotEmpty) {
             final matches = vodData.where((m) {
               final name = (m['name'] ?? '').toString().toLowerCase();
-              final cleanName = name.renameAll(RegExp(r'[^a-z0-9\s]'), ''); // wait, clean replaceAll
               final cleanNameReplaced = name.replaceAll(RegExp(r'[^a-z0-9\s]'), '');
               if (cleanTitle.isEmpty) return false;
               return cleanNameReplaced.contains(cleanTitle) || cleanTitle.contains(cleanNameReplaced);
