@@ -43,7 +43,7 @@ class MobileStreamService {
   }
 
   // ==========================================
-  // 3. MAIN AGGREGATOR (BOTH RENDER + XTREAM)
+  // 3. MAIN AGGREGATOR (SMART MATCHING)
   // ==========================================
   static Future getDirectStreams({
     required dynamic item,
@@ -55,6 +55,9 @@ class MobileStreamService {
     final targetTmdbId = item['tmdb_id']?.toString() ?? '';
     final isTv = item['isTv'] == true;
     final movieTitle = (item['title'] ?? '').toString().toLowerCase();
+    
+    // Clean up movie title for better matching (remove special chars/year spaces)
+    final cleanTitle = movieTitle.replaceAll(RegExp(r'[^a-z0-9\s]'), '').trim();
     final targetSeason = season ?? 1;
     final targetEpisode = episode ?? 1;
 
@@ -103,7 +106,7 @@ class MobileStreamService {
     }
 
     // ------------------------------------------
-    // PART B: XTREAM CODES IPTV FETCHING LOGIC
+    // PART B: SMART XTREAM IPTV MATCHING LOGIC
     // ------------------------------------------
     try {
       final config = await _fetchXtreamConfig();
@@ -112,16 +115,28 @@ class MobileStreamService {
       final xcPass = config['password']!;
 
       if (!isTv) {
-        // --- IPTV Movie / VOD Search ---
+        // --- IPTV Movie / VOD Smart Search ---
         final vodUrl = '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_vod_streams';
-        final vodRes = await http.get(Uri.parse(vodUrl)).timeout(const Duration(seconds: 8));
+        final vodRes = await http.get(Uri.parse(vodUrl)).timeout(const Duration(seconds: 10));
         
         if (vodRes.statusCode == 200) {
           final vodData = jsonDecode(vodRes.body);
           if (vodData is List) {
+            // Flexible matching: check if name contains keywords from movie title
             final matches = vodData.where((m) {
               final name = (m['name'] ?? '').toString().toLowerCase();
-              return movieTitle.isNotEmpty && name.contains(movieTitle);
+              final cleanName = name.replaceAll(RegExp(r'[^a-z0-9\s]'), '');
+              
+              // Match if clean name contains primary words of movie title
+              if (cleanTitle.isEmpty) return false;
+              final words = cleanTitle.split(' ');
+              int matchedWords = 0;
+              for (var w in words) {
+                if (w.length > 2 && cleanName.contains(w)) {
+                  matchedWords++;
+                }
+              }
+              return matchedWords >= (words.length > 1 ? 2 : 1) || cleanName.contains(cleanTitle);
             });
 
             for (var matched in matches) {
@@ -132,8 +147,8 @@ class MobileStreamService {
               final isHindi = isHindiStream(rawName);
 
               resolved.add({
-                'server': 'Xtream - IPTV',
-                'title': isHindi ? '🎬 $rawName [Hindi Dubbed]' : '🎬 $rawName [Original]',
+                'server': 'Xtream - IPTV VOD',
+                'title': isHindi ? '🎬 $rawName [Hindi Dubbed]' : '🎬 $rawName [Original/Other]',
                 'url': streamUrl,
                 'isHindi': isHindi,
               });
@@ -141,22 +156,22 @@ class MobileStreamService {
           }
         }
       } else {
-        // --- IPTV TV Series / Episodes Search ---
+        // --- IPTV TV Series Smart Search ---
         final seriesUrl = '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_series';
-        final seriesRes = await http.get(Uri.parse(seriesUrl)).timeout(const Duration(seconds: 8));
+        final seriesRes = await http.get(Uri.parse(seriesUrl)).timeout(const Duration(seconds: 10));
 
         if (seriesRes.statusCode == 200) {
           final seriesJson = jsonDecode(seriesRes.body);
           if (seriesJson is List) {
             final matchedSeries = seriesJson.firstWhere(
-              (s) => (s['name'] ?? '').toString().toLowerCase().contains(movieTitle),
+              (s) => (s['name'] ?? '').toString().toLowerCase().contains(cleanTitle),
               orElse: () => null,
             );
 
             if (matchedSeries != null) {
               final seriesId = matchedSeries['series_id'];
               final infoUrl = '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_series_info&series_id=$seriesId';
-              final infoRes = await http.get(Uri.parse(infoUrl)).timeout(const Duration(seconds: 8));
+              final infoRes = await http.get(Uri.parse(infoUrl)).timeout(const Duration(seconds: 10));
 
               if (infoRes.statusCode == 200) {
                 final infoData = jsonDecode(infoRes.body);
@@ -175,7 +190,7 @@ class MobileStreamService {
                       final container = targetEp['container_extension'] ?? 'mp4';
                       final epTitle = targetEp['title'] ?? 'S${targetSeason}E${targetEpisode}';
                       final epUrl = '$xcHost/series/$xcUser/$xcPass/$epId.$container';
-                      final isHindi = isHindiStream(epTitle);
+                      final isHindi = isHindiStream(epTitle) || isHindiStream(matchedSeries['name'] ?? '');
 
                       resolved.add({
                         'server': 'Xtream - IPTV Series',
