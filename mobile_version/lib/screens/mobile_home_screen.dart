@@ -9,6 +9,7 @@ import '../services/catalog_service.dart';
 import '../widgets/mobile_stream_modal.dart';
 import 'search_screen.dart';
 import 'my_list_screen.dart';
+import 'player_screen.dart';
 
 class MobileHomeScreen extends StatefulWidget {
   const MobileHomeScreen({super.key});
@@ -33,6 +34,13 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   List hotstarCatalog = [];
   List zee5Catalog = [];
   List sonylivCatalog = [];
+
+  // Xtream IPTV Credentials & Caches
+  String? _xtreamServer;
+  String? _xtreamUser;
+  String? _xtreamPass;
+  List<dynamic>? _cachedVodStreams;
+  List<dynamic>? _cachedSeriesStreams;
 
   final PageController _bannerController = PageController();
   int _currentBannerIndex = 0;
@@ -80,6 +88,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     }
 
     _fetchCatalogsInBackground();
+    _preloadXtreamVodInBackground();
   }
 
   Future<void> _loadContinueWatching() async {
@@ -95,11 +104,48 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     } catch (_) {}
   }
 
+  // Gist JSON se Xtream server, username aur password extract karna
+  void _parseXtreamCredentials(dynamic data) {
+    if (data is! Map) return;
+
+    if (data['xtream'] != null && data['xtream'] is Map) {
+      _xtreamServer = data['xtream']['server'] ?? data['xtream']['url'];
+      _xtreamUser = data['xtream']['username'] ?? data['xtream']['user'];
+      _xtreamPass = data['xtream']['password'] ?? data['xtream']['pass'];
+    } else if (data['iptv'] != null && data['iptv'] is Map) {
+      _xtreamServer = data['iptv']['server'] ?? data['iptv']['url'];
+      _xtreamUser = data['iptv']['username'] ?? data['iptv']['user'];
+      _xtreamPass = data['iptv']['password'] ?? data['iptv']['pass'];
+    } else {
+      _xtreamServer = data['server'] ?? data['url'] ?? data['xtream_server'] ?? data['iptv_server'];
+      _xtreamUser = data['username'] ?? data['user'] ?? data['xtream_user'];
+      _xtreamPass = data['password'] ?? data['pass'] ?? data['xtream_pass'];
+    }
+
+    if (_xtreamServer != null) {
+      _xtreamServer = _xtreamServer!.trim().replaceAll(RegExp(r'/+$'), '');
+    }
+  }
+
+  // Background me Xtream VOD list fetch karna taaki click karte hi instant chale
+  void _preloadXtreamVodInBackground() async {
+    if (_xtreamServer == null || _xtreamUser == null || _xtreamPass == null) return;
+    try {
+      final url = Uri.parse('$_xtreamServer/player_api.php?username=$_xtreamUser&password=$_xtreamPass&action=get_vod_streams');
+      final res = await http.get(url).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        _cachedVodStreams = jsonDecode(res.body);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _fetchProvidersAndHomeContent() async {
     try {
-      final res = await http.get(Uri.parse(AppConfig.gistUrl)).timeout(const Duration(seconds: 3));
+      final res = await http.get(Uri.parse(AppConfig.gistUrl)).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
-        activeProviders = jsonDecode(res.body)['active_providers'] ?? [];
+        final data = jsonDecode(res.body);
+        activeProviders = data['active_providers'] ?? [];
+        _parseXtreamCredentials(data);
       }
     } catch (_) {}
 
@@ -169,6 +215,167 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     }
   }
 
+  // Title matching cleaner (tags aur brackets remove karta hai)
+  String _cleanTitle(String text) {
+    return text
+        .toLowerCase()
+        .replaceAll(RegExp(r'\[.*?\]|\(.*?\)|fhd|1080p|720p|4k|hindi|dubbed|telugu|tamil|eng'), '')
+        .replaceAll(RegExp(r'[^a-z0-9]'), '')
+        .trim();
+  }
+
+  bool _isTitleMatch(String vodName, String cleanQuery) {
+    final cleanVod = _cleanTitle(vodName);
+    if (cleanVod.isEmpty || cleanQuery.isEmpty) return false;
+    return cleanVod.contains(cleanQuery) || cleanQuery.contains(cleanVod);
+  }
+
+  // TMDB Title se Xtream Movie Playable Stream URL nikalna
+  Future<String?> _getXtreamMovieUrl({required String title, String? tmdbId}) async {
+    if (_xtreamServer == null || _xtreamUser == null || _xtreamPass == null) {
+      try {
+        final res = await http.get(Uri.parse(AppConfig.gistUrl)).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          _parseXtreamCredentials(jsonDecode(res.body));
+        }
+      } catch (_) {}
+    }
+
+    if (_xtreamServer == null || _xtreamUser == null || _xtreamPass == null) {
+      return null;
+    }
+
+    if (_cachedVodStreams == null) {
+      try {
+        final url = Uri.parse('$_xtreamServer/player_api.php?username=$_xtreamUser&password=$_xtreamPass&action=get_vod_streams');
+        final res = await http.get(url).timeout(const Duration(seconds: 10));
+        if (res.statusCode == 200) {
+          _cachedVodStreams = jsonDecode(res.body);
+        }
+      } catch (_) {
+        return null;
+      }
+    }
+
+    if (_cachedVodStreams == null) return null;
+
+    // 1. Pehle TMDB ID se match try karein
+    if (tmdbId != null && tmdbId.isNotEmpty) {
+      for (var vod in _cachedVodStreams!) {
+        if (vod['tmdb_id']?.toString() == tmdbId) {
+          final streamId = vod['stream_id'];
+          final ext = vod['container_extension'] ?? 'mp4';
+          return '$_xtreamServer/movie/$_xtreamUser/$_xtreamPass/$streamId.$ext';
+        }
+      }
+    }
+
+    // 2. Agar TMDB ID na mile to Title se match karein
+    final cleanQuery = _cleanTitle(title);
+    for (var vod in _cachedVodStreams!) {
+      final vodName = vod['name']?.toString() ?? '';
+      if (_isTitleMatch(vodName, cleanQuery)) {
+        final streamId = vod['stream_id'];
+        final ext = vod['container_extension'] ?? 'mp4';
+        return '$_xtreamServer/movie/$_xtreamUser/$_xtreamPass/$streamId.$ext';
+      }
+    }
+
+    return null;
+  }
+
+  // Movie click hone par Xtream se direct link play karna
+  Future<void> _playMovieWithXtream(dynamic item) async {
+    final title = item['title'] ?? item['name'] ?? 'Movie';
+    final tmdbId = item['tmdb_id']?.toString() ?? item['id']?.toString();
+
+    // Loader Dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: Card(
+          color: Color(0xFF16181F),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: Color(0xFF0072D2)),
+                SizedBox(height: 16),
+                Text(
+                  'Connecting to Xtream Server...',
+                  style: TextStyle(color: Colors.white, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final streamUrl = await _getXtreamMovieUrl(title: title, tmdbId: tmdbId);
+
+    if (mounted) Navigator.pop(context); // Close loader
+
+    if (streamUrl != null) {
+      _saveContinueWatching(item);
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => VideoPlayerScreen(
+              videoUrl: streamUrl,
+              title: title,
+            ),
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('"$title" Xtream server par nahi mili!'),
+            backgroundColor: Colors.redAccent,
+            action: SnackBarAction(
+              label: 'Other Providers',
+              textColor: Colors.white,
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: const Color(0xFF16181F),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                  ),
+                  builder: (ctx) {
+                    return MobileQualitySelectorSheet(
+                      item: Map<String, dynamic>.from(item),
+                      providers: activeProviders,
+                      onPlaySaved: () => _loadContinueWatching(),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveContinueWatching(dynamic item) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      List list = List.from(continueWatchingList);
+      list.removeWhere((e) => e['tmdb_id'].toString() == item['tmdb_id'].toString());
+      list.insert(0, item);
+      if (list.length > 20) list = list.take(20).toList();
+      await prefs.setString('continue_watching_mobile', jsonEncode(list));
+      _loadContinueWatching();
+    } catch (_) {}
+  }
+
   void _onItemTapped(dynamic item) {
     bool isTv = item['isTv'] == true;
 
@@ -184,25 +391,27 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           return _MobileSeasonEpisodeSelectorSheet(
             item: Map<String, dynamic>.from(item),
             activeProviders: activeProviders,
+            xtreamServer: _xtreamServer,
+            xtreamUser: _xtreamUser,
+            xtreamPass: _xtreamPass,
+            onPlayEpisode: (videoUrl, episodeTitle) {
+              _saveContinueWatching(item);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => VideoPlayerScreen(
+                    videoUrl: videoUrl,
+                    title: episodeTitle,
+                  ),
+                ),
+              );
+            },
           );
         },
       );
     } else {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: const Color(0xFF16181F),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (ctx) {
-          return MobileQualitySelectorSheet(
-            item: Map<String, dynamic>.from(item),
-            providers: activeProviders,
-            onPlaySaved: () => _loadContinueWatching(),
-          );
-        },
-      );
+      // Movies direct Xtream se fetch hokar play hongi
+      _playMovieWithXtream(item);
     }
   }
 
@@ -456,174 +665,3 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               width: 115,
               margin: const EdgeInsets.only(right: 10),
               decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: color.withOpacity(0.4),
-                    blurRadius: 6,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                providerName.toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 12,
-                  letterSpacing: 0.8,
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildHorizontalMovieList(String title, List items) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        SizedBox(
-          height: 160,
-          child: items.isEmpty
-              ? const Center(
-                  child: SizedBox(
-                    height: 24,
-                    width: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0072D2)),
-                  ),
-                )
-              : ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  itemCount: items.length,
-                  itemBuilder: (ctx, index) {
-                    final item = items[index];
-                    return GestureDetector(
-                      onTap: () => _onItemTapped(item),
-                      onLongPress: () => _addToMyList(item),
-                      child: Container(
-                        width: 110,
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.network(
-                                  item['poster'] ?? '',
-                                  fit: BoxFit.cover,
-                                  width: double.infinity,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    color: Colors.grey[850],
-                                    child: const Icon(Icons.broken_image, color: Colors.white24),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              item['title'] ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-}
-
-class _MobileSeasonEpisodeSelectorSheet extends StatelessWidget {
-  final Map<String, dynamic> item;
-  final List activeProviders;
-
-  const _MobileSeasonEpisodeSelectorSheet({required this.item, required this.activeProviders});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      height: MediaQuery.of(context).size.height * 0.4,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(item['title'] ?? 'Select Season/Episode', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-          const Expanded(
-            child: Center(child: Text('Seasons & Episodes loading...', style: TextStyle(color: Colors.white54))),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MobileCategoryGridScreen extends StatelessWidget {
-  final String title;
-  final List rawItems;
-  final Function(dynamic) onItemTapped;
-  final Function(dynamic) onItemLongPressed;
-
-  const _MobileCategoryGridScreen({
-    required this.title,
-    required this.rawItems,
-    required this.onItemTapped,
-    required this.onItemLongPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F1014),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0F1014),
-        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 16)),
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: GridView.builder(
-        padding: const EdgeInsets.all(12),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          childAspectRatio: 0.65,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-        ),
-        itemCount: rawItems.length,
-        itemBuilder: (ctx, i) {
-          final item = rawItems[i];
-          return GestureDetector(
-            onTap: () => onItemTapped(item),
-            onLongPress: () => onItemLongPressed(item),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(item['poster'] ?? '', fit: BoxFit.cover),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
