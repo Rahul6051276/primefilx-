@@ -95,11 +95,9 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     } catch (_) {}
   }
 
-  // Independent safe fetching for each row so no single failure blocks the UI
   Future<void> _fetchProvidersAndHomeContent() async {
-    // 1. Providers Gist
     try {
-      final res = await http.get(Uri.parse(MobileStreamService.gistUrl)).timeout(const Duration(seconds: 3));
+      final res = await http.get(Uri.parse(AppConfig.gistUrl)).timeout(const Duration(seconds: 3));
       if (res.statusCode == 200) {
         activeProviders = jsonDecode(res.body)['active_providers'] ?? [];
       }
@@ -109,7 +107,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       activeProviders = [{'name': 'Render Cloud', 'url': 'https://vidsrc.me'}];
     }
 
-    // 2. Bollywood Latest
     try {
       final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
@@ -121,7 +118,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       }
     } catch (_) {}
 
-    // 3. Hindi Web Series
     try {
       final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
@@ -129,7 +125,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       }
     } catch (_) {}
 
-    // 4. Hollywood Hindi Dubbed
     try {
       final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
@@ -137,7 +132,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       }
     } catch (_) {}
 
-    // 5. English Web Series
     try {
       final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
@@ -145,7 +139,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       }
     } catch (_) {}
 
-    // 6. South Indian Movies (Telugu/Tamil fallback)
     try {
       final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
@@ -153,7 +146,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       }
     } catch (_) {}
 
-    // Final safety fallback if any list is empty
     if (bollywoodLatest.isEmpty) bollywoodListFallback();
   }
 
