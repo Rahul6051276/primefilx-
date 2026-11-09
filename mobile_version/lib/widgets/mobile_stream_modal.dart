@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import '../services/stream_service.dart';
-import '../services/tmdb_service.dart';
 import '../internal_player.dart';
 
 class MobileQualitySelectorSheet extends StatefulWidget {
@@ -46,8 +45,6 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
 
     if (mounted) {
       List rawList = results is List ? results : [];
-      
-      // Filter removed completely so Xtream & IPTV streams show up properly!
       setState(() {
         streams = rawList;
         loading = false;
