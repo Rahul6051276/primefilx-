@@ -196,7 +196,6 @@ class MobileStreamService {
     // ------------------------------------------
     // PART C: FALLBACK (IF NO STREAMS FOUND)
     // ------------------------------------------
-    if (resolved.items.isEmpty) {} // placeholder safety
     if (resolved.isEmpty) {
       resolved.add({
         'server': 'Render Cloud Server',
