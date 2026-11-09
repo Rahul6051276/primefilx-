@@ -22,7 +22,7 @@ class MobileStreamService {
   // ==========================================
   // 2. GIST CONFIG HELPER FOR XTREAM IPTV
   // ==========================================
-  static Future> _fetchXtreamConfig() async {
+  static Future _fetchXtreamConfig() async {
     try {
       final res = await http.get(Uri.parse(gistUrl)).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
@@ -45,7 +45,7 @@ class MobileStreamService {
   // ==========================================
   // 3. MAIN AGGREGATOR (BOTH RENDER + XTREAM)
   // ==========================================
-  static Future<List<dynamic>> getDirectStreams({
+  static Future getDirectStreams({
     required dynamic item,
     required dynamic providers,
     int? season,
@@ -72,7 +72,7 @@ class MobileStreamService {
         
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body);
-          List streamList = [];
+          var streamList = [];
           if (data is List) {
             streamList = data;
           } else if (data is Map && data['streams'] != null) {
@@ -146,9 +146,9 @@ class MobileStreamService {
         final seriesRes = await http.get(Uri.parse(seriesUrl)).timeout(const Duration(seconds: 8));
 
         if (seriesRes.statusCode == 200) {
-          final seriesData = jsonDecode(seriesRes.body);
-          if (seriesData is List) {
-            final matchedSeries = seriesData.firstWhere(
+          final seriesJson = jsonDecode(seriesRes.body);
+          if (seriesJson is List) {
+            final matchedSeries = seriesJson.firstWhere(
               (s) => (s['name'] ?? '').toString().toLowerCase().contains(movieTitle),
               orElse: () => null,
             );
@@ -196,6 +196,7 @@ class MobileStreamService {
     // ------------------------------------------
     // PART C: FALLBACK (IF NO STREAMS FOUND)
     // ------------------------------------------
+    if (resolved.items.isEmpty) {} // placeholder safety
     if (resolved.isEmpty) {
       resolved.add({
         'server': 'Render Cloud Server',
