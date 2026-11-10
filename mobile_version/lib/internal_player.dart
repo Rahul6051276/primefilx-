@@ -140,7 +140,6 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
 
     _controller.seekTo(newPos);
 
-    // Screen par Fast Forward / Rewind ka HUD Indicator dikhayein
     setState(() {
       _overlayText = seconds > 0 ? '+$seconds s' : '$seconds s';
       _overlayIcon = seconds > 0 ? Icons.forward_30_rounded : Icons.replay_30_rounded;
@@ -183,7 +182,7 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
   }
 
   // ============================================================================
-  // GOOGLE TV / ANDROID TV REMOTE D-PAD KEYBOARD HANDLER
+  // GOOGLE TV / ANDROID TV REMOTE KEYBOARD HANDLER
   // ============================================================================
   KeyEventResult _handleTvRemoteKeys(KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
@@ -218,7 +217,7 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
       return KeyEventResult.handled;
     }
 
-    // 4. Up / Down Arrow (Controls Toggle)
+    // 4. Up / Down Arrow (Toggle Controls)
     if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.arrowDown) {
       _toggleControls();
       return KeyEventResult.handled;
@@ -346,7 +345,7 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
               child: Container(color: Colors.transparent),
             ),
 
-            // 4. Center Gesture & Remote HUD Indicator (Volume, Brightness, Forward/Rewind)
+            // 4. Center Gesture & Remote HUD Indicator
             if (_showOverlayIndicator)
               Center(
                 child: Container(
@@ -370,7 +369,7 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
                 ),
               ),
 
-            // 5. Full Player Controls (Lock hone par hide ho jayenge)
+            // 5. Full Player Controls
             if (_showControls && _isInit && !_isLocked)
               Container(
                 decoration: const BoxDecoration(
@@ -523,4 +522,54 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
                             ),
                           ),
                           Row(
-                            mainAxisAlignment: MainAxisAlig
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                _formatDuration(_controller.value.position),
+                                style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                _formatDuration(_controller.value.duration),
+                                style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // 6. Screen Lock Button
+            if (_showControls && _isInit)
+              Positioned(
+                left: 20,
+                top: size.height / 2 - 25,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _toggleLock,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _isLocked ? const Color(0xFFE50914) : Colors.black54,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: _isLocked ? Colors.white : Colors.white38,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Icon(
+                      _isLocked ? Icons.lock : Icons.lock_open,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
