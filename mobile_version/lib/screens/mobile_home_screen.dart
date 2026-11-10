@@ -14,6 +14,7 @@ import '../internal_player.dart';
 
 const String kGistPermanentRawUrl = "https://gist.githubusercontent.com/Rahul6051276/5b0a18b2cf69a99d1d3e06629fcbc70a/raw";
 
+// TV REMOTE D-PAD FOCUS WIDGET
 class TvFocusable extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
@@ -506,4 +507,199 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                     const SizedBox(height: 16),
                     _buildHorizontalMovieList('Latest South Indian Movies', southMovies),
                     const SizedBox(height: 16),
-                    _buildHor
+                    _buildHorizontalMovieList('Latest English Web Series', englishWebSeries),
+                    const SizedBox(height: 16),
+                    _buildHorizontalMovieList('Latest Hollywood Movies', hollywoodHindiDubbed),
+                    const SizedBox(height: 16),
+                    _buildHorizontalMovieList('Latest Hindi Web Series', hindiWebSeries),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ),
+      bottomNavigationBar: BottomNavigationBar(
+        backgroundColor: const Color(0xFF0F1014),
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: const Color(0xFF0072D2),
+        unselectedItemColor: Colors.white54,
+        currentIndex: 0,
+        onTap: (index) {
+          if (index == 1) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MyListScreen()),
+            );
+          }
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_filled),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.bookmark_added_rounded),
+            label: 'My List',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopFeaturedCarousel() {
+    if (heroBanners.isEmpty) return const SizedBox.shrink();
+    final isTv = MediaQuery.of(context).size.width > 600;
+
+    return SizedBox(
+      height: isTv ? 320 : 220,
+      child: PageView.builder(
+        controller: _bannerController,
+        onPageChanged: (index) => setState(() => _currentBannerIndex = index),
+        itemCount: heroBanners.length,
+        itemBuilder: (context, index) {
+          final item = heroBanners[index];
+          return TvFocusable(
+            onTap: () => _onItemTapped(item),
+            onLongPress: () => _addToMyList(item),
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                image: DecorationImage(
+                  image: NetworkImage(item['backdrop'] ?? ''),
+                  fit: BoxFit.cover,
+                ),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  gradient: LinearGradient(
+                    colors: [Colors.transparent, Colors.black.withOpacity(0.85)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+                padding: const EdgeInsets.all(16),
+                alignment: Alignment.bottomCenter,
+                child: Text(
+                  item['title'] ?? '',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: isTv ? 24 : 20,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildStreamingProvidersRow() {
+    final isTv = MediaQuery.of(context).size.width > 600;
+
+    final providers = [
+      {'name': 'Netflix', 'color': const Color(0xFFE50914)},
+      {'name': 'Disney+ Hotstar', 'color': const Color(0xFF0072D2)},
+      {'name': 'Prime Video', 'color': const Color(0xFF00A8E1)},
+      {'name': 'ZEE5', 'color': const Color(0xFF8C1159)},
+      {'name': 'SonyLIV', 'color': const Color(0xFFFC4C02)},
+    ];
+
+    return SizedBox(
+      height: isTv ? 65 : 55,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        itemCount: providers.length,
+        itemBuilder: (ctx, i) {
+          final p = providers[i];
+          final String providerName = p['name'] as String;
+          final Color color = p['color'] as Color;
+
+          return TvFocusable(
+            onTap: () => _openProviderCatalog(providerName, color),
+            focusColor: color,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: isTv ? 150 : 120,
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withOpacity(0.4),
+                    blurRadius: 6,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                providerName.toUpperCase(),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: isTv ? 13 : 11,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildHorizontalMovieList(String title, List items) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    final isTv = MediaQuery.of(context).size.width > 600;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text(
+            title,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: isTv ? 19 : 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        SizedBox(
+          height: isTv ? 210 : 160,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: items.length,
+            itemBuilder: (ctx, index) {
+              final item = items[index];
+              return TvFocusable(
+                onTap: () => _onItemTapped(item),
+                onLongPress: () => _addToMyList(item),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: isTv ? 140 : 110,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            item['poster'] ?? '',
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.grey[850],
+                              child:
