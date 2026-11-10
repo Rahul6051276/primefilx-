@@ -1,5 +1,5 @@
 // ============================================================================
-// INTERNAL VIDEO PLAYER (TV REMOTE D-PAD + FULL LANDSCAPE FIX + GESTURES + CROP)
+// INTERNAL VIDEO PLAYER (TV REMOTE D-PAD + TRUE CROP/ZOOM + FULLSCREEN FIX)
 // ============================================================================
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -37,6 +37,7 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
   bool _showOverlayIndicator = false;
   Timer? _overlayTimer;
 
+  // 0: FIT (Original), 1: FILL (Stretch), 2: CROP (Digital Zoom - Cuts Black Bars)
   int _scaleMode = 2;
   final FocusNode _playerFocusNode = FocusNode();
 
@@ -133,9 +134,25 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
     _startHideTimer();
   }
 
+  // CYCLE ASPECT RATIO & SHOW BIG ON-SCREEN HUD
   void _cycleScaleMode() {
     if (_isLocked) return;
-    setState(() { _scaleMode = (_scaleMode + 1) % 3; _showControls = true; });
+    final scaleNames = ['FIT (16:9)', 'FILL (STRETCH)', 'CROP (ZOOM)'];
+    final scaleIcons = [Icons.fit_screen_rounded, Icons.aspect_ratio_rounded, Icons.crop_free_rounded];
+
+    setState(() {
+      _scaleMode = (_scaleMode + 1) % 3;
+      _overlayText = scaleNames[_scaleMode];
+      _overlayIcon = scaleIcons[_scaleMode];
+      _showOverlayIndicator = true;
+      _showControls = true;
+    });
+
+    _overlayTimer?.cancel();
+    _overlayTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) setState(() => _showOverlayIndicator = false);
+    });
+
     _startHideTimer();
   }
 
@@ -154,28 +171,43 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
     });
   }
 
+  // GOOGLE TV REMOTE D-PAD SHORTCUTS
   KeyEventResult _handleTvRemoteKeys(KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
 
+    // 1. Center / OK / Play-Pause: Play/Pause
     if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.space ||
         key == LogicalKeyboardKey.gameButtonA || key == LogicalKeyboardKey.mediaPlayPause ||
         key == LogicalKeyboardKey.mediaPlay || key == LogicalKeyboardKey.mediaPause) {
       _togglePlayPause();
       return KeyEventResult.handled;
     }
+
+    // 2. Right Arrow: 30s Fast-Forward
     if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.mediaFastForward || key == LogicalKeyboardKey.mediaTrackNext) {
       _seekRelative(30);
       return KeyEventResult.handled;
     }
+
+    // 3. Left Arrow: 30s Rewind
     if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.mediaRewind || key == LogicalKeyboardKey.mediaTrackPrevious) {
       _seekRelative(-30);
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.arrowDown) {
+
+    // 4. UP ARROW: Direct Aspect Ratio (CROP / FIT / STRETCH) Switch!
+    if (key == LogicalKeyboardKey.arrowUp) {
+      _cycleScaleMode();
+      return KeyEventResult.handled;
+    }
+
+    // 5. Down Arrow: Show/Hide Controls
+    if (key == LogicalKeyboardKey.arrowDown) {
       _toggleControls();
       return KeyEventResult.handled;
     }
+
     return KeyEventResult.ignored;
   }
 
@@ -218,7 +250,6 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
     _playerFocusNode.dispose();
     _controller.dispose();
 
-    // TV SCREEN FULL LANDSCAPE FIX (TV par kabhi vertical/mobile mode me nahi jayega)
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
@@ -228,27 +259,45 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
     super.dispose();
   }
 
+  // TRUE TV & MOBILE CROP / ZOOM IMPLEMENTATION
   Widget _buildVideoOutput() {
     if (!_isInit) return const Center(child: CircularProgressIndicator(color: Color(0xFFE50914)));
 
     if (_scaleMode == 1) {
+      // 1: STRETCH / FILL
       return SizedBox.expand(
         child: FittedBox(
           fit: BoxFit.fill,
-          child: SizedBox(width: _controller.value.size.width, height: _controller.value.size.height, child: VideoPlayer(_controller)),
+          child: SizedBox(
+            width: _controller.value.size.width,
+            height: _controller.value.size.height,
+            child: VideoPlayer(_controller),
+          ),
         ),
       );
     } else if (_scaleMode == 2) {
+      // 2: TRUE CROP (1.34x Digital Zoom to remove Cinema Black Bars completely on TV!)
       return SizedBox.expand(
-        child: FittedBox(
-          fit: BoxFit.cover,
-          child: SizedBox(width: _controller.value.size.width, height: _controller.value.size.height, child: VideoPlayer(_controller)),
+        child: ClipRect(
+          child: Transform.scale(
+            scale: 1.34,
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: _controller.value.aspectRatio,
+                child: VideoPlayer(_controller),
+              ),
+            ),
+          ),
         ),
       );
     }
 
+    // 0: FIT (Original 16:9 Aspect Ratio)
     return Center(
-      child: AspectRatio(aspectRatio: _controller.value.aspectRatio, child: VideoPlayer(_controller)),
+      child: AspectRatio(
+        aspectRatio: _controller.value.aspectRatio,
+        child: VideoPlayer(_controller),
+      ),
     );
   }
 
@@ -274,21 +323,22 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
               onVerticalDragUpdate: (details) => _onVerticalDragUpdate(details, size.width, size.height),
               child: Container(color: Colors.transparent),
             ),
+            // CENTER HUD INDICATOR (Shows CROP ZOOM, Volume, Forward/Rewind)
             if (_showOverlayIndicator)
               Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF181818).withOpacity(0.9),
+                    color: const Color(0xFF181818).withOpacity(0.92),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE50914).withOpacity(0.5), width: 1.5),
+                    border: Border.all(color: const Color(0xFFE50914), width: 1.5),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(_overlayIcon, color: const Color(0xFFE50914), size: 28),
-                      const SizedBox(width: 10),
-                      Text(_overlayText, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                      Icon(_overlayIcon, color: const Color(0xFFE50914), size: 30),
+                      const SizedBox(width: 12),
+                      Text(_overlayText, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
@@ -314,6 +364,7 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
                           ),
                           const SizedBox(width: 14),
                           Expanded(child: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
+                          // Aspect Ratio Button (Clickable on Mobile & TV)
                           InkWell(
                             onTap: _cycleScaleMode,
                             child: Container(
