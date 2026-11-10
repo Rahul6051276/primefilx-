@@ -1,10 +1,11 @@
 // ============================================================================
-// INTERNAL VIDEO PLAYER (TV REMOTE D-PAD + TRUE CROP/ZOOM + FULLSCREEN FIX)
+// INTERNAL VIDEO PLAYER (WAKELOCK SCREEN ON + SMART AUTO-HIDE + TV D-PAD + CROP)
 // ============================================================================
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 class InternalPlayerScreen extends StatefulWidget {
   final String streamUrl;
@@ -37,13 +38,15 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
   bool _showOverlayIndicator = false;
   Timer? _overlayTimer;
 
-  // 0: FIT (Original), 1: FILL (Stretch), 2: CROP (Digital Zoom - Cuts Black Bars)
   int _scaleMode = 2;
   final FocusNode _playerFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
+    // 1. SCREEN KO SLEEP / LOCK HONE SE ROKEGA (WAKELOCK)
+    WakelockPlus.enable();
+
     SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _initPlayer();
@@ -54,7 +57,8 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
       _controller = VideoPlayerController.networkUrl(
         Uri.parse(widget.streamUrl),
         httpHeaders: const {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': '*/*',
           'Connection': 'keep-alive',
         },
@@ -66,21 +70,34 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
 
       if (mounted) {
         setState(() => _isInit = true);
-        _startHideTimer();
+        _startHideTimer(3);
         _playerFocusNode.requestFocus();
       }
 
-      _controller.addListener(() { if (mounted) setState(() {}); });
+      _controller.addListener(() {
+        if (!mounted) return;
+        // Video start hote hi controls auto-hide timer restart karein
+        if (_controller.value.isPlaying && _showControls && (_controlsTimer == null || !_controlsTimer!.isActive)) {
+          _startHideTimer(3);
+        }
+        setState(() {});
+      });
     } catch (e) {
       if (mounted) setState(() { _hasError = true; _errorMessage = e.toString(); });
     }
   }
 
-  void _startHideTimer() {
+  // SMART AUTO-HIDE TIMER (Controls 3 second me automatically gayab honge)
+  void _startHideTimer([int seconds = 3]) {
     _controlsTimer?.cancel();
-    _controlsTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted && _controller.value.isPlaying && !_isLocked) {
-        setState(() => _showControls = false);
+    _controlsTimer = Timer(Duration(seconds: seconds), () {
+      if (mounted && !_isLocked) {
+        if (_controller.value.isPlaying) {
+          setState(() => _showControls = false);
+        } else {
+          // Buffering ya pause ho to firse check karein
+          _startHideTimer(2);
+        }
       }
     });
   }
@@ -94,7 +111,7 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
           if (mounted && _isLocked) setState(() => _showControls = false);
         });
       } else {
-        _startHideTimer();
+        _startHideTimer(3);
       }
     }
   }
@@ -105,7 +122,7 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
       _controller.value.isPlaying ? _controller.pause() : _controller.play();
       _showControls = true;
     });
-    if (_controller.value.isPlaying) _startHideTimer();
+    if (_controller.value.isPlaying) _startHideTimer(3);
   }
 
   void _seekRelative(int seconds) {
@@ -131,10 +148,9 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
       if (mounted) setState(() => _showOverlayIndicator = false);
     });
 
-    _startHideTimer();
+    _startHideTimer(3);
   }
 
-  // CYCLE ASPECT RATIO & SHOW BIG ON-SCREEN HUD
   void _cycleScaleMode() {
     if (_isLocked) return;
     final scaleNames = ['FIT (16:9)', 'FILL (STRETCH)', 'CROP (ZOOM)'];
@@ -153,7 +169,7 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
       if (mounted) setState(() => _showOverlayIndicator = false);
     });
 
-    _startHideTimer();
+    _startHideTimer(3);
   }
 
   void _toggleLock() {
@@ -166,48 +182,37 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
         });
       } else {
         _showControls = true;
-        _startHideTimer();
+        _startHideTimer(3);
       }
     });
   }
 
-  // GOOGLE TV REMOTE D-PAD SHORTCUTS
   KeyEventResult _handleTvRemoteKeys(KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
 
-    // 1. Center / OK / Play-Pause: Play/Pause
     if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.space ||
         key == LogicalKeyboardKey.gameButtonA || key == LogicalKeyboardKey.mediaPlayPause ||
         key == LogicalKeyboardKey.mediaPlay || key == LogicalKeyboardKey.mediaPause) {
       _togglePlayPause();
       return KeyEventResult.handled;
     }
-
-    // 2. Right Arrow: 30s Fast-Forward
     if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.mediaFastForward || key == LogicalKeyboardKey.mediaTrackNext) {
       _seekRelative(30);
       return KeyEventResult.handled;
     }
-
-    // 3. Left Arrow: 30s Rewind
     if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.mediaRewind || key == LogicalKeyboardKey.mediaTrackPrevious) {
       _seekRelative(-30);
       return KeyEventResult.handled;
     }
-
-    // 4. UP ARROW: Direct Aspect Ratio (CROP / FIT / STRETCH) Switch!
     if (key == LogicalKeyboardKey.arrowUp) {
       _cycleScaleMode();
       return KeyEventResult.handled;
     }
-
-    // 5. Down Arrow: Show/Hide Controls
     if (key == LogicalKeyboardKey.arrowDown) {
       _toggleControls();
       return KeyEventResult.handled;
     }
-
     return KeyEventResult.ignored;
   }
 
@@ -245,6 +250,9 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
 
   @override
   void dispose() {
+    // 2. VIDEO SE BAHAR AATE HI NORMAL TIMEOUT WAPAS CHALU
+    WakelockPlus.disable();
+
     _controlsTimer?.cancel();
     _overlayTimer?.cancel();
     _playerFocusNode.dispose();
@@ -259,45 +267,31 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
     super.dispose();
   }
 
-  // TRUE TV & MOBILE CROP / ZOOM IMPLEMENTATION
   Widget _buildVideoOutput() {
     if (!_isInit) return const Center(child: CircularProgressIndicator(color: Color(0xFFE50914)));
 
     if (_scaleMode == 1) {
-      // 1: STRETCH / FILL
       return SizedBox.expand(
         child: FittedBox(
           fit: BoxFit.fill,
-          child: SizedBox(
-            width: _controller.value.size.width,
-            height: _controller.value.size.height,
-            child: VideoPlayer(_controller),
-          ),
+          child: SizedBox(width: _controller.value.size.width, height: _controller.value.size.height, child: VideoPlayer(_controller)),
         ),
       );
     } else if (_scaleMode == 2) {
-      // 2: TRUE CROP (1.34x Digital Zoom to remove Cinema Black Bars completely on TV!)
       return SizedBox.expand(
         child: ClipRect(
           child: Transform.scale(
             scale: 1.34,
             child: Center(
-              child: AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
-                child: VideoPlayer(_controller),
-              ),
+              child: AspectRatio(aspectRatio: _controller.value.aspectRatio, child: VideoPlayer(_controller)),
             ),
           ),
         ),
       );
     }
 
-    // 0: FIT (Original 16:9 Aspect Ratio)
     return Center(
-      child: AspectRatio(
-        aspectRatio: _controller.value.aspectRatio,
-        child: VideoPlayer(_controller),
-      ),
+      child: AspectRatio(aspectRatio: _controller.value.aspectRatio, child: VideoPlayer(_controller)),
     );
   }
 
@@ -315,15 +309,21 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
         body: Stack(
           fit: StackFit.expand,
           children: [
+            // 1. Video Layer
             _buildVideoOutput(),
+
+            // 2. Brightness Black Shading
             IgnorePointer(child: Container(color: Colors.black.withOpacity((1.0 - _brightness) * 0.8))),
+
+            // 3. Gesture Layer (Mobile Tap & Drag to Hide/Show Controls)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _toggleControls,
               onVerticalDragUpdate: (details) => _onVerticalDragUpdate(details, size.width, size.height),
               child: Container(color: Colors.transparent),
             ),
-            // CENTER HUD INDICATOR (Shows CROP ZOOM, Volume, Forward/Rewind)
+
+            // 4. Center Gesture HUD (Volume & Brightness, Forward/Rewind, Crop)
             if (_showOverlayIndicator)
               Center(
                 child: Container(
@@ -343,86 +343,96 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
                   ),
                 ),
               ),
+
+            // 5. Full Player Controls (Tap anywhere on background to toggle)
             if (_showControls && _isInit && !_isLocked)
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                    colors: [Colors.black87, Colors.transparent, Colors.transparent, Colors.black87],
-                    stops: [0.0, 0.22, 0.72, 1.0],
+              GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _toggleControls,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                      colors: [Colors.black87, Colors.transparent, Colors.transparent, Colors.black87],
+                      stops: [0.0, 0.22, 0.72, 1.0],
+                    ),
                   ),
-                ),
-                child: Stack(
-                  children: [
-                    Positioned(
-                      top: 20, left: 20, right: 20,
-                      child: Row(
-                        children: [
-                          InkWell(
-                            onTap: () => Navigator.pop(context),
-                            child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle, border: Border.all(color: Colors.white24)), child: const Icon(Icons.arrow_back, color: Colors.white, size: 22)),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(child: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
-                          // Aspect Ratio Button (Clickable on Mobile & TV)
-                          InkWell(
-                            onTap: _cycleScaleMode,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                              decoration: BoxDecoration(color: const Color(0xFF181818).withOpacity(0.9), borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFE50914), width: 1.5)),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.aspect_ratio, color: Color(0xFFE50914), size: 18),
-                                  const SizedBox(width: 6),
-                                  Text(scaleNames[_scaleMode], style: const TextStyle(color: Color(0xFFE50914), fontWeight: FontWeight.bold, fontSize: 12)),
-                                ],
+                  child: Stack(
+                    children: [
+                      // Top Bar
+                      Positioned(
+                        top: 20, left: 20, right: 20,
+                        child: Row(
+                          children: [
+                            InkWell(
+                              onTap: () => Navigator.pop(context),
+                              child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle, border: Border.all(color: Colors.white24)), child: const Icon(Icons.arrow_back, color: Colors.white, size: 22)),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(child: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
+                            InkWell(
+                              onTap: _cycleScaleMode,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                decoration: BoxDecoration(color: const Color(0xFF181818).withOpacity(0.9), borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFE50914), width: 1.5)),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.aspect_ratio, color: Color(0xFFE50914), size: 18),
+                                    const SizedBox(width: 6),
+                                    Text(scaleNames[_scaleMode], style: const TextStyle(color: Color(0xFFE50914), fontWeight: FontWeight.bold, fontSize: 12)),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    Center(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          InkWell(
-                            onTap: () => _seekRelative(-30),
-                            child: Container(width: 56, height: 56, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black45, border: Border.all(color: Colors.white24, width: 1.5)), child: const Icon(Icons.replay_30, color: Colors.white, size: 34)),
-                          ),
-                          const SizedBox(width: 44),
-                          InkWell(
-                            onTap: _togglePlayPause,
-                            child: Container(width: 68, height: 68, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFFE50914), border: Border.all(color: Colors.white30, width: 2)), child: Icon(_controller.value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 42)),
-                          ),
-                          const SizedBox(width: 44),
-                          InkWell(
-                            onTap: () => _seekRelative(30),
-                            child: Container(width: 56, height: 56, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black45, border: Border.all(color: Colors.white24, width: 1.5)), child: const Icon(Icons.forward_30, color: Colors.white, size: 34)),
-                          ),
-                        ],
+                      // Center 30s Seek & Play/Pause Buttons
+                      Center(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            InkWell(
+                              onTap: () => _seekRelative(-30),
+                              child: Container(width: 56, height: 56, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black45, border: Border.all(color: Colors.white24, width: 1.5)), child: const Icon(Icons.replay_30, color: Colors.white, size: 34)),
+                            ),
+                            const SizedBox(width: 44),
+                            InkWell(
+                              onTap: _togglePlayPause,
+                              child: Container(width: 68, height: 68, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFFE50914), border: Border.all(color: Colors.white30, width: 2)), child: Icon(_controller.value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 42)),
+                            ),
+                            const SizedBox(width: 44),
+                            InkWell(
+                              onTap: () => _seekRelative(30),
+                              child: Container(width: 56, height: 56, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black45, border: Border.all(color: Colors.white24, width: 1.5)), child: const Icon(Icons.forward_30, color: Colors.white, size: 34)),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    Positioned(
-                      bottom: 16, left: 24, right: 24,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          VideoProgressIndicator(_controller, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 8), colors: const VideoProgressColors(playedColor: Color(0xFFE50914), bufferedColor: Colors.white38, backgroundColor: Colors.white12)),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(_formatDuration(_controller.value.position), style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
-                              Text(_formatDuration(_controller.value.duration), style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                        ],
+                      // Bottom Progress Bar
+                      Positioned(
+                        bottom: 16, left: 24, right: 24,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            VideoProgressIndicator(_controller, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 8), colors: const VideoProgressColors(playedColor: Color(0xFFE50914), bufferedColor: Colors.white38, backgroundColor: Colors.white12)),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(_formatDuration(_controller.value.position), style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
+                                Text(_formatDuration(_controller.value.duration), style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
+
+            // 6. Screen Lock Button
             if (_showControls && _isInit)
               Positioned(
                 left: 20, top: size.height / 2 - 25,
@@ -442,3 +452,4 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
     );
   }
 }
+// END OF FILE
