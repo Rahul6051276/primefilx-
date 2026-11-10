@@ -11,7 +11,6 @@ import 'search_screen.dart';
 import 'my_list_screen.dart';
 import 'player_screen.dart';
 
-// Aapka Permanent Raw Gist URL
 const String kGistPermanentRawUrl = "https://gist.githubusercontent.com/Rahul6051276/5b0a18b2cf69a99d1d3e06629fcbc70a/raw";
 
 class XtreamAccount {
@@ -47,12 +46,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   var hindiWebSeries = [];
   var englishWebSeries = [];
   var southMovies = [];
-
-  List netflixCatalog = [];
-  List primeCatalog = [];
-  List hotstarCatalog = [];
-  List zee5Catalog = [];
-  List sonylivCatalog = [];
 
   final List<XtreamAccount> _xtreamAccounts = [];
 
@@ -105,8 +98,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     if (mounted) {
       setState(() => isLoading = false);
     }
-
-    _fetchCatalogsInBackground();
   }
 
   Future<void> _loadContinueWatching() async {
@@ -150,7 +141,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
   Future<void> _fetchProvidersAndHomeContent() async {
     try {
-      // ?t= lagane se GitHub hamesha NAYA data dega (Purana cached nahi aayega)
       final freshGistUrl = "$kGistPermanentRawUrl?t=${DateTime.now().millisecondsSinceEpoch}";
       final res = await http.get(Uri.parse(freshGistUrl)).timeout(const Duration(seconds: 8));
 
@@ -214,20 +204,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     heroBanners = bollywoodLatest;
   }
 
-  void _fetchCatalogsInBackground() async {
-    final catalogs = await CatalogService.fetchMassiveCatalogs();
-    if (mounted) {
-      setState(() {
-        netflixCatalog = (catalogs['netflix'] as List?)?.isNotEmpty == true ? catalogs['netflix']! : bollywoodLatest;
-        primeCatalog = (catalogs['prime'] as List?)?.isNotEmpty == true ? catalogs['prime']! : hollywoodHindiDubbed;
-        hotstarCatalog = (catalogs['hotstar'] as List?)?.isNotEmpty == true ? catalogs['hotstar']! : hindiWebSeries;
-        zee5Catalog = (catalogs['zee5'] as List?)?.isNotEmpty == true ? catalogs['zee5']! : bollywoodLatest;
-        sonylivCatalog = bollywoodLatest;
-      });
-    }
-  }
-
-  // Movie par click hote hi Seedha Bottom Sheet open hoga
   void _onItemTapped(dynamic item) {
     bool isTv = item['isTv'] == true;
 
@@ -261,7 +237,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         },
       );
     } else {
-      // Direct Quality & Server Selector Sheet khulega
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
@@ -315,30 +290,14 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     } catch (_) {}
   }
 
-  void _openProviderCatalog(String providerName) {
-    List targetList = bollywoodLatest;
-    if (providerName == 'Netflix') {
-      targetList = netflixCatalog.isNotEmpty ? netflixCatalog : bollywoodLatest;
-    } else if (providerName == 'Prime Video') {
-      targetList = primeCatalog.isNotEmpty ? primeCatalog : hollywoodHindiDubbed;
-    } else if (providerName == 'JioHotstar') {
-      targetList = hotstarCatalog.isNotEmpty ? hotstarCatalog : hindiWebSeries;
-    } else if (providerName == 'ZEE5') {
-      targetList = zee5Catalog.isNotEmpty ? zee5Catalog : bollywoodLatest;
-    } else if (providerName == 'SonyLIV') {
-      targetList = sonylivCatalog.isNotEmpty ? sonylivCatalog : bollywoodLatest;
-    }
-
-    if (targetList.isEmpty) {
-      targetList = bollywoodLatest;
-    }
-
+  // Streaming platform click hone par screen open karna
+  void _openProviderCatalog(String providerName, Color providerColor) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => _MobileCategoryGridScreen(
-          title: '$providerName Catalog (${targetList.length}+ Titles)',
-          rawItems: targetList,
+          providerName: providerName,
+          providerColor: providerColor,
           onItemTapped: _onItemTapped,
           onItemLongPressed: _addToMyList,
         ),
@@ -537,7 +496,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           final color = p['color'] as Color;
 
           return GestureDetector(
-            onTap: () => _openProviderCatalog(providerName),
+            onTap: () => _openProviderCatalog(providerName, color),
             child: Container(
               width: 115,
               margin: const EdgeInsets.only(right: 10),
@@ -830,18 +789,122 @@ class _MobileSeasonEpisodeSelectorSheetState extends State<_MobileSeasonEpisodeS
   }
 }
 
-class _MobileCategoryGridScreen extends StatelessWidget {
-  final String title;
-  final List rawItems;
+// ============================================================================
+// OTT PLATFORM CATALOG SCREEN (NETFLIX, HOTSTAR, PRIME, ZEE5, SONYLIV)
+// WITH MOVIES & WEB SERIES DROPDOWN FILTER (50+ TITLES PER PLATFORM)
+// ============================================================================
+class _MobileCategoryGridScreen extends StatefulWidget {
+  final String providerName;
+  final Color providerColor;
   final Function(dynamic) onItemTapped;
   final Function(dynamic) onItemLongPressed;
 
   const _MobileCategoryGridScreen({
-    required this.title,
-    required this.rawItems,
+    required this.providerName,
+    required this.providerColor,
     required this.onItemTapped,
     required this.onItemLongPressed,
   });
+
+  @override
+  State<_MobileCategoryGridScreen> createState() => _MobileCategoryGridScreenState();
+}
+
+class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
+  String selectedType = 'Movies'; // 'Movies' or 'Web Series'
+  bool isLoading = true;
+  List<dynamic> items = [];
+
+  // Instant switching ke liye memory cache
+  final Map<String, List<dynamic>> _catalogCache = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCatalog();
+  }
+
+  // TMDB Watch Provider IDs for India (IN)
+  int _getProviderId(String name) {
+    switch (name) {
+      case 'Netflix':
+        return 8;
+      case 'JioHotstar':
+        return 122;
+      case 'Prime Video':
+        return 119;
+      case 'ZEE5':
+        return 232;
+      case 'SonyLIV':
+        return 237;
+      default:
+        return 8;
+    }
+  }
+
+  Future<void> _loadCatalog() async {
+    final cacheKey = selectedType;
+    if (_catalogCache.containsKey(cacheKey) && _catalogCache[cacheKey]!.isNotEmpty) {
+      setState(() {
+        items = _catalogCache[cacheKey]!;
+        isLoading = false;
+      });
+      return;
+    }
+
+    setState(() => isLoading = true);
+
+    final providerId = _getProviderId(widget.providerName);
+    final bool isTv = (selectedType == 'Web Series');
+    final String endpoint = isTv ? 'discover/tv' : 'discover/movie';
+
+    List<dynamic> fetchedResults = [];
+
+    try {
+      // 50+ Titles ke liye 3 Pages (20 x 3 = 60 items) parallel me fetch karein
+      final futures = [1, 2, 3].map((page) {
+        final url = Uri.parse(
+          '${AppConfig.tmdbBase}/$endpoint?api_key=${AppConfig.tmdbKey}&watch_region=IN&with_watch_providers=$providerId&sort_by=popularity.desc&page=$page',
+        );
+        return http.get(url).timeout(const Duration(seconds: 6));
+      }).toList();
+
+      final responses = await Future.wait(futures);
+
+      for (var res in responses) {
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          final rawList = data['results'] as List? ?? [];
+          for (var m in rawList) {
+            final title = isTv ? (m['name'] ?? m['original_name'] ?? '') : (m['title'] ?? m['original_title'] ?? '');
+            final posterPath = m['poster_path'];
+            final date = isTv ? (m['first_air_date'] ?? '') : (m['release_date'] ?? '');
+            final year = date.toString().split('-').first;
+
+            if (posterPath != null && posterPath.toString().isNotEmpty) {
+              fetchedResults.add({
+                'tmdb_id': m['id'],
+                'title': title,
+                'poster': 'https://image.tmdb.org/t/p/w500$posterPath',
+                'backdrop': m['backdrop_path'] != null ? 'https://image.tmdb.org/t/p/w780${m['backdrop_path']}' : '',
+                'year': year,
+                'rating': (m['vote_average'] ?? 0.0).toString(),
+                'isTv': isTv,
+              });
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        items = fetchedResults;
+        _catalogCache[cacheKey] = fetchedResults;
+        isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -849,30 +912,173 @@ class _MobileCategoryGridScreen extends StatelessWidget {
       backgroundColor: const Color(0xFF0F1014),
       appBar: AppBar(
         backgroundColor: const Color(0xFF0F1014),
-        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 16)),
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: GridView.builder(
-        padding: const EdgeInsets.all(12),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          childAspectRatio: 0.65,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-        ),
-        itemCount: rawItems.length,
-        itemBuilder: (ctx, i) {
-          final item = rawItems[i];
-          return GestureDetector(
-            onTap: () => onItemTapped(item),
-            onLongPress: () => onItemLongPressed(item),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(item['poster'] ?? '', fit: BoxFit.cover),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: widget.providerColor,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                widget.providerName.toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 11,
+                  letterSpacing: 0.6,
+                ),
+              ),
             ),
-          );
-        },
+            const SizedBox(width: 8),
+            Text(
+              '(${items.length})',
+              style: const TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          // DROPDOWN FILTER: MOVIES & WEB SERIES
+          Container(
+            margin: const EdgeInsets.only(right: 12, top: 8, bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E2029),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: widget.providerColor, width: 1.2),
+            ),
+            alignment: Alignment.center,
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: selectedType,
+                dropdownColor: const Color(0xFF1E2029),
+                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 20),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'Movies',
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.movie_creation_outlined, color: Colors.white70, size: 16),
+                        SizedBox(width: 6),
+                        Text('Movies'),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Web Series',
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.tv_rounded, color: Colors.white70, size: 16),
+                        SizedBox(width: 6),
+                        Text('Web Series'),
+                      ],
+                    ),
+                  ),
+                ],
+                onChanged: (val) {
+                  if (val != null && val != selectedType) {
+                    setState(() {
+                      selectedType = val;
+                    });
+                    _loadCatalog();
+                  }
+                },
+              ),
+            ),
+          ),
+        ],
       ),
+      body: isLoading
+          ? Center(
+              child: CircularProgressIndicator(color: widget.providerColor),
+            )
+          : items.isEmpty
+              ? const Center(
+                  child: Text(
+                    'No content available for this platform.',
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                )
+              : GridView.builder(
+                  padding: const EdgeInsets.all(12),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    childAspectRatio: 0.62,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 12,
+                  ),
+                  itemCount: items.length,
+                  itemBuilder: (ctx, i) {
+                    final item = items[i];
+                    return GestureDetector(
+                      onTap: () => widget.onItemTapped(item),
+                      onLongPress: () => widget.onItemLongPressed(item),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Image.network(
+                                    item['poster'] ?? '',
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      color: Colors.grey[900],
+                                      child: const Icon(Icons.broken_image, color: Colors.white24),
+                                    ),
+                                  ),
+                                  // Rating Badge
+                                  if (item['rating'] != null && item['rating'] != '0.0')
+                                    Positioned(
+                                      top: 4,
+                                      right: 4,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withOpacity(0.75),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.star, color: Colors.amber, size: 10),
+                                            const SizedBox(width: 2),
+                                            Text(
+                                              double.tryParse(item['rating'])?.toStringAsFixed(1) ?? item['rating'],
+                                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            item['title'] ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
     );
   }
 }
