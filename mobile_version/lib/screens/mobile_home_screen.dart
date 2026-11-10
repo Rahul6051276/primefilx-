@@ -14,7 +14,7 @@ import '../internal_player.dart';
 
 const String kGistPermanentRawUrl = "https://gist.githubusercontent.com/Rahul6051276/5b0a18b2cf69a99d1d3e06629fcbc70a/raw";
 
-// TV REMOTE D-PAD FOCUSABLE
+// TV REMOTE D-PAD FOCUS WIDGET
 class TvFocusable extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
@@ -43,7 +43,7 @@ class _TvFocusableState extends State<TvFocusable> {
   @override
   Widget build(BuildContext context) {
     return Focus(
-      onFocusChange: (focused) => setState(() => _isFocused = focused),
+      onFocusChange: (f) => setState(() => _isFocused = f),
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
           if (event.logicalKey == LogicalKeyboardKey.select ||
@@ -497,7 +497,7 @@ class _MobileSeasonEpisodeSelectorSheetState extends State<_MobileSeasonEpisodeS
   }
 }
 
-// OTT PLATFORM CATALOG SCREEN (MOBILE 3, TV 6 COLUMNS)
+// OTT PLATFORM CATALOG SCREEN (TV REMOTE TABS + 6 COLUMNS ON TV)
 class _MobileCategoryGridScreen extends StatefulWidget {
   final String providerName; final Color providerColor; final Function(dynamic) onItemTapped, onItemLongPressed;
   const _MobileCategoryGridScreen({required this.providerName, required this.providerColor, required this.onItemTapped, required this.onItemLongPressed});
@@ -559,7 +559,10 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width; final int cols = w > 900 ? 6 : (w > 600 ? 4 : 3); final bool isTv = w > 600;
+    final w = MediaQuery.of(context).size.width;
+    final int cols = w > 900 ? 6 : (w > 600 ? 4 : 3);
+    final bool isTv = w > 600;
+
     return Scaffold(
       backgroundColor: const Color(0xFF0F1014),
       appBar: AppBar(
@@ -568,17 +571,33 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
           Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: widget.providerColor, borderRadius: BorderRadius.circular(6)), child: Text(widget.providerName.toUpperCase(), style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: isTv ? 13 : 11))),
           const SizedBox(width: 8), Text('(${items.length})', style: const TextStyle(color: Colors.white54, fontSize: 13)),
         ]),
+        // TV REMOTE TABS: MOVIES VS WEB SERIES (NO DROPDOWN TRAP)
         actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 12, top: 8, bottom: 8), padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(color: const Color(0xFF1E2029), borderRadius: BorderRadius.circular(20), border: Border.all(color: widget.providerColor)),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: selectedType, dropdownColor: const Color(0xFF1E2029), icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white),
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                items: const [DropdownMenuItem(value: 'Movies', child: Text('Movies')), DropdownMenuItem(value: 'Web Series', child: Text('Web Series'))],
-                onChanged: (v) { if (v != null && v != selectedType) { setState(() => selectedType = v); _loadCatalog(); } },
-              ),
+          Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TvFocusable(
+                  onTap: () { if (selectedType != 'Movies') { setState(() => selectedType = 'Movies'); _loadCatalog(); } },
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(color: selectedType == 'Movies' ? widget.providerColor : const Color(0xFF1E2029), borderRadius: BorderRadius.circular(20)),
+                    child: const Text('Movies', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                TvFocusable(
+                  onTap: () { if (selectedType != 'Web Series') { setState(() => selectedType = 'Web Series'); _loadCatalog(); } },
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(color: selectedType == 'Web Series' ? widget.providerColor : const Color(0xFF1E2029), borderRadius: BorderRadius.circular(20)),
+                    child: const Text('Web Series', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
             ),
           ),
         ],
