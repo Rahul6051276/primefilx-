@@ -15,7 +15,7 @@ import '../internal_player.dart';
 const String kGistPermanentRawUrl = "https://gist.githubusercontent.com/Rahul6051276/5b0a18b2cf69a99d1d3e06629fcbc70a/raw";
 
 // ============================================================================
-// ANDROID TV & GOOGLE TV D-PAD REMOTE FOCUSABLE WIDGET
+// ANDROID TV & GOOGLE TV D-PAD REMOTE FOCUSABLE WIDGET (100% COMPATIBLE)
 // ============================================================================
 class TvFocusable extends StatefulWidget {
   final Widget child;
@@ -50,12 +50,11 @@ class _TvFocusableState extends State<TvFocusable> {
       },
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
-          // TV Remote OK / Center button handling
+          // Google TV Remote OK / Center Button Handling
           if (event.logicalKey == LogicalKeyboardKey.select ||
               event.logicalKey == LogicalKeyboardKey.enter ||
               event.logicalKey == LogicalKeyboardKey.space ||
-              event.logicalKey == LogicalKeyboardKey.gameButtonA ||
-              event.logicalKey == LogicalKeyboardKey.dpadCenter) {
+              event.logicalKey == LogicalKeyboardKey.gameButtonA) {
             widget.onTap();
             return KeyEventResult.handled;
           }
@@ -176,7 +175,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     });
   }
 
-  // 1. INSTANT LOCAL CACHE LOAD (0.05s ME POSTERS LOAD HONGE, NO GREY BOX)
+  // 1. INSTANT LOCAL CACHE LOAD (0.05s ME POSTERS LOAD HONGE)
   Future<void> _loadCachedDataInstantly() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -212,7 +211,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   Future<void> _fetchAllDataLightningFast() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Fetch Gist
     try {
       final freshGistUrl = "$kGistPermanentRawUrl?t=${DateTime.now().millisecondsSinceEpoch}";
       final res = await http.get(Uri.parse(freshGistUrl)).timeout(const Duration(seconds: 6));
@@ -227,18 +225,16 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       activeProviders = [{'name': 'Render Cloud', 'url': 'https://vidsrc.me'}];
     }
 
-    // Filter helper to completely ban Anime and Daily Soaps
     bool isCleanItem(dynamic m) {
       final genres = (m['genre_ids'] as List?) ?? [];
       final origLang = m['original_language']?.toString().toLowerCase() ?? '';
-      if (genres.contains(16) || origLang == 'ja') return false; // No Anime
+      if (genres.contains(16) || origLang == 'ja') return false;
       if (genres.contains(10766) || genres.contains(10764) || genres.contains(10762) || genres.contains(10763)) {
-        return false; // No Soaps or Reality
+        return false;
       }
       return true;
     }
 
-    // Parallel execution for all rows
     try {
       final futures = [
         // Bollywood
@@ -256,7 +252,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&without_genres=16',
         )).timeout(const Duration(seconds: 6)),
 
-        // Hindi Web Series (Top OTT Networks Only)
+        // Hindi Web Series
         http.get(Uri.parse(
           '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=1024|213|3919|2893|2892|3671&with_original_language=hi&without_genres=16,10762,10764,10766,10767,10763&vote_count.gte=10&sort_by=popularity.desc',
         )).timeout(const Duration(seconds: 6)),
@@ -1002,9 +998,9 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
     final genres = (m['genre_ids'] as List?) ?? [];
     final origLang = m['original_language']?.toString().toLowerCase() ?? '';
 
-    if (genres.contains(16) || origLang == 'ja') return false; // No Anime
+    if (genres.contains(16) || origLang == 'ja') return false;
     if (genres.contains(10766) || genres.contains(10764) || genres.contains(10762) || genres.contains(10763)) {
-      return false; // No Soaps or Reality
+      return false;
     }
     return true;
   }
@@ -1066,7 +1062,6 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
         }
       }
 
-      // Hotstar Fallback for full 60+ catalog
       if (fetchedResults.length < 25 && isTv && widget.providerName == 'JioHotstar') {
         final fallbackUrl = Uri.parse(
           '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=3919|3671|2739$banFilter&sort_by=popularity.desc&page=1',
