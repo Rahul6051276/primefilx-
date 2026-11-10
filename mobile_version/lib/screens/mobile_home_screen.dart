@@ -9,7 +9,7 @@ import '../services/catalog_service.dart';
 import '../widgets/mobile_stream_modal.dart';
 import 'search_screen.dart';
 import 'my_list_screen.dart';
-import '../internal_player.dart'; // Asli Internal Player (Landscape + Lock + Crop)
+import '../internal_player.dart';
 
 const String kGistPermanentRawUrl = "https://gist.githubusercontent.com/Rahul6051276/5b0a18b2cf69a99d1d3e06629fcbc70a/raw";
 
@@ -139,6 +139,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     }
   }
 
+  // LATEST THEATER & OTT CONTENT (ZERO DAILY SOAPS - ONLY 2024-2026 TOP RELEASES)
   Future<void> _fetchProvidersAndHomeContent() async {
     try {
       final freshGistUrl = "$kGistPermanentRawUrl?t=${DateTime.now().millisecondsSinceEpoch}";
@@ -155,8 +156,11 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       activeProviders = [{'name': 'Render Cloud', 'url': 'https://vidsrc.me'}];
     }
 
+    // 1. Latest Bollywood Movies (Theaters + Fresh OTT: 2024-2026)
     try {
-      final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
+      final res = await http.get(Uri.parse(
+        '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&vote_count.gte=5',
+      )).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
         bollywoodLatest = CatalogService.parseResults(jsonDecode(res.body)['results']);
         if (bollywoodLatest.isNotEmpty) {
@@ -166,31 +170,44 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       }
     } catch (_) {}
 
+    // 2. Latest South Indian Movies (Telugu, Tamil, Malayalam, Kannada Blockbusters: 2024-2026)
     try {
-      final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=hi&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
+      final res = await http.get(Uri.parse(
+        '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&vote_count.gte=5',
+      )).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
-        hindiWebSeries = CatalogService.parseResults(jsonDecode(res.body)['results'], isTv: true);
+        southMovies = CatalogService.parseResults(jsonDecode(res.body)['results']);
       }
     } catch (_) {}
 
+    // 3. Latest Hollywood Movies (English Popular in India: 2024-2026)
     try {
-      final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
+      final res = await http.get(Uri.parse(
+        '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&vote_count.gte=15',
+      )).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
         hollywoodHindiDubbed = CatalogService.parseResults(jsonDecode(res.body)['results']);
       }
     } catch (_) {}
 
+    // 4. Latest Hindi Web Series (DAILY SOAPS & ULLU 100% BLOCKED!)
+    // Only Top OTT Networks: Netflix (213), Prime (1024), Hotstar (3919/2739), SonyLIV (2893), ZEE5 (2892), JioCinema (3671)
     try {
-      final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_original_language=en&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
+      final res = await http.get(Uri.parse(
+        '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=1024|213|3919|2893|2892|3671|2739&with_original_language=hi&without_genres=10766,10767,10763&vote_count.gte=10&sort_by=popularity.desc',
+      )).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
-        englishWebSeries = CatalogService.parseResults(jsonDecode(res.body)['results'], isTv: true);
+        hindiWebSeries = CatalogService.parseResults(jsonDecode(res.body)['results'], isTv: true);
       }
     } catch (_) {}
 
+    // 5. Latest English Web Series (Only Top Global OTT Networks: HBO, Netflix, Prime, Disney+)
     try {
-      final res = await http.get(Uri.parse('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te&sort_by=popularity.desc')).timeout(const Duration(seconds: 4));
+      final res = await http.get(Uri.parse(
+        '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=213|1024|49|2739|2552&without_genres=10766,10767,10763&vote_count.gte=25&sort_by=popularity.desc',
+      )).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
-        southMovies = CatalogService.parseResults(jsonDecode(res.body)['results']);
+        englishWebSeries = CatalogService.parseResults(jsonDecode(res.body)['results'], isTv: true);
       }
     } catch (_) {}
 
@@ -223,7 +240,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
             iptvHeaders: _iptvHeaders,
             onPlayEpisode: (videoUrl, episodeTitle) {
               _saveContinueWatching(item);
-              // Asli Internal Player me play hoga
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -492,8 +508,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         itemCount: providers.length,
         itemBuilder: (ctx, i) {
           final p = providers[i];
-          final providerName = p['name'] as String;
-          final color = p['color'] as Color;
+          final String providerName = p['name'] as String;
+          final Color color = p['color'] as Color;
 
           return GestureDetector(
             onTap: () => _openProviderCatalog(providerName, color),
@@ -601,10 +617,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 }
 
-// ============================================================================
-// WEB SERIES SEASON & EPISODE SELECTOR SHEET
-// (Episode Click par Movie ki tarah Quality & Server Selector Sheet khulega)
-// ============================================================================
 class _MobileSeasonEpisodeSelectorSheet extends StatefulWidget {
   final Map<String, dynamic> item;
   final List activeProviders;
@@ -774,10 +786,7 @@ class _MobileSeasonEpisodeSelectorSheetState extends State<_MobileSeasonEpisodeS
                             title: Text(epTitle, style: const TextStyle(color: Colors.white, fontSize: 14)),
                             trailing: const Icon(Icons.play_circle_fill, color: Color(0xFF0072D2), size: 30),
                             onTap: () {
-                              // 1. Episode List Band Karein
                               Navigator.pop(context);
-
-                              // 2. Movie ki tarah Quality & Server Selector Sheet khol kar IPTV servers dikhayein
                               showModalBottomSheet(
                                 context: context,
                                 isScrollControlled: true,
@@ -839,20 +848,20 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
     _loadCatalog();
   }
 
-  int _getProviderId(String name) {
+  String _getProviderIds(String name) {
     switch (name) {
       case 'Netflix':
-        return 8;
+        return '8|175';
       case 'JioHotstar':
-        return 122;
+        return '122|220|337'; // Hotstar (122) + JioCinema (220) + Disney+ (337)
       case 'Prime Video':
-        return 119;
+        return '119|9';
       case 'ZEE5':
-        return 232;
+        return '232';
       case 'SonyLIV':
-        return 237;
+        return '237';
       default:
-        return 8;
+        return '8';
     }
   }
 
@@ -868,18 +877,20 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
 
     setState(() => isLoading = true);
 
-    final providerId = _getProviderId(widget.providerName);
+    final providerIds = _getProviderIds(widget.providerName);
     final bool isTv = (selectedType == 'Web Series');
     final String endpoint = isTv ? 'discover/tv' : 'discover/movie';
 
     List<dynamic> fetchedResults = [];
 
     try {
+      final genreFilter = isTv ? '&without_genres=10766,10767,10763' : '';
+
       final futures = [1, 2, 3].map((page) {
         final url = Uri.parse(
-          '${AppConfig.tmdbBase}/$endpoint?api_key=${AppConfig.tmdbKey}&watch_region=IN&with_watch_providers=$providerId&sort_by=popularity.desc&page=$page',
+          '${AppConfig.tmdbBase}/$endpoint?api_key=${AppConfig.tmdbKey}&watch_region=IN&with_watch_providers=$providerIds&sort_by=popularity.desc$genreFilter&page=$page',
         );
-        return http.get(url).timeout(const Duration(seconds: 6));
+        return http.get(url).timeout(const Duration(seconds: 7));
       }).toList();
 
       final responses = await Future.wait(futures);
