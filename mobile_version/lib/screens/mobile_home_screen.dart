@@ -139,7 +139,22 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     }
   }
 
-  // LATEST THEATER & OTT CONTENT (ZERO DAILY SOAPS - ONLY 2024-2026 TOP RELEASES)
+  // Filter helper to completely ban Anime and Daily Soaps
+  bool _isCleanItem(dynamic m) {
+    final genres = (m['genre_ids'] as List?) ?? [];
+    final origLang = m['original_language']?.toString().toLowerCase() ?? '';
+
+    // Block Anime & Animation (16 = Animation, ja = Japanese)
+    if (genres.contains(16) || origLang == 'ja') return false;
+
+    // Block Daily Soaps, Reality TV, Kids, News (10766 = Soap, 10764 = Reality, 10762 = Kids)
+    if (genres.contains(10766) || genres.contains(10764) || genres.contains(10762) || genres.contains(10763) || genres.contains(10767)) {
+      return false;
+    }
+
+    return true;
+  }
+
   Future<void> _fetchProvidersAndHomeContent() async {
     try {
       final freshGistUrl = "$kGistPermanentRawUrl?t=${DateTime.now().millisecondsSinceEpoch}";
@@ -156,13 +171,15 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       activeProviders = [{'name': 'Render Cloud', 'url': 'https://vidsrc.me'}];
     }
 
-    // 1. Latest Bollywood Movies (Theaters + Fresh OTT: 2024-2026)
+    // 1. Bollywood Movies (Latest 2024-2026 Blockbusters)
     try {
       final res = await http.get(Uri.parse(
-        '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&vote_count.gte=5',
+        '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&vote_count.gte=5&without_genres=16',
       )).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
-        bollywoodLatest = CatalogService.parseResults(jsonDecode(res.body)['results']);
+        final raw = jsonDecode(res.body)['results'] as List? ?? [];
+        final filtered = raw.where(_isCleanItem).toList();
+        bollywoodLatest = CatalogService.parseResults(filtered);
         if (bollywoodLatest.isNotEmpty) {
           heroBanners = bollywoodLatest.take(6).toList();
           _startCarouselTimer(heroBanners.length);
@@ -170,44 +187,52 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       }
     } catch (_) {}
 
-    // 2. Latest South Indian Movies (Telugu, Tamil, Malayalam, Kannada Blockbusters: 2024-2026)
+    // 2. South Indian Movies (Telugu, Tamil, Malayalam, Kannada Blockbusters: 2024-2026)
     try {
       final res = await http.get(Uri.parse(
-        '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&vote_count.gte=5',
+        '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&vote_count.gte=5&without_genres=16',
       )).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
-        southMovies = CatalogService.parseResults(jsonDecode(res.body)['results']);
+        final raw = jsonDecode(res.body)['results'] as List? ?? [];
+        final filtered = raw.where(_isCleanItem).toList();
+        southMovies = CatalogService.parseResults(filtered);
       }
     } catch (_) {}
 
-    // 3. Latest Hollywood Movies (English Popular in India: 2024-2026)
+    // 3. Hollywood Movies (English Blockbusters: 2024-2026)
     try {
       final res = await http.get(Uri.parse(
-        '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&vote_count.gte=15',
+        '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&vote_count.gte=15&without_genres=16',
       )).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
-        hollywoodHindiDubbed = CatalogService.parseResults(jsonDecode(res.body)['results']);
+        final raw = jsonDecode(res.body)['results'] as List? ?? [];
+        final filtered = raw.where(_isCleanItem).toList();
+        hollywoodHindiDubbed = CatalogService.parseResults(filtered);
       }
     } catch (_) {}
 
-    // 4. Latest Hindi Web Series (DAILY SOAPS & ULLU 100% BLOCKED!)
-    // Only Top OTT Networks: Netflix (213), Prime (1024), Hotstar (3919/2739), SonyLIV (2893), ZEE5 (2892), JioCinema (3671)
+    // 4. Hindi Web Series (ONLY TOP OTT NETWORKS: Prime, Netflix, Hotstar, SonyLIV, ZEE5, JioCinema)
+    // DAILY SOAPS & ANIME PERMANENTLY REMOVED
     try {
       final res = await http.get(Uri.parse(
-        '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=1024|213|3919|2893|2892|3671|2739&with_original_language=hi&without_genres=10766,10767,10763&vote_count.gte=10&sort_by=popularity.desc',
+        '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=1024|213|3919|2893|2892|3671&with_original_language=hi&without_genres=16,10762,10764,10766,10767,10763&vote_count.gte=15&sort_by=popularity.desc',
       )).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
-        hindiWebSeries = CatalogService.parseResults(jsonDecode(res.body)['results'], isTv: true);
+        final raw = jsonDecode(res.body)['results'] as List? ?? [];
+        final filtered = raw.where(_isCleanItem).toList();
+        hindiWebSeries = CatalogService.parseResults(filtered, isTv: true);
       }
     } catch (_) {}
 
-    // 5. Latest English Web Series (Only Top Global OTT Networks: HBO, Netflix, Prime, Disney+)
+    // 5. English Web Series (Only Top HBO, Netflix, Prime, Disney+ Series - No Anime)
     try {
       final res = await http.get(Uri.parse(
-        '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=213|1024|49|2739|2552&without_genres=10766,10767,10763&vote_count.gte=25&sort_by=popularity.desc',
+        '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=213|1024|49|2739|2552&without_genres=16,10762,10764,10766,10767,10763&vote_count.gte=25&sort_by=popularity.desc',
       )).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
-        englishWebSeries = CatalogService.parseResults(jsonDecode(res.body)['results'], isTv: true);
+        final raw = jsonDecode(res.body)['results'] as List? ?? [];
+        final filtered = raw.where(_isCleanItem).toList();
+        englishWebSeries = CatalogService.parseResults(filtered, isTv: true);
       }
     } catch (_) {}
 
@@ -617,6 +642,9 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 }
 
+// ============================================================================
+// WEB SERIES SEASON & EPISODE SELECTOR SHEET
+// ============================================================================
 class _MobileSeasonEpisodeSelectorSheet extends StatefulWidget {
   final Map<String, dynamic> item;
   final List activeProviders;
@@ -817,6 +845,7 @@ class _MobileSeasonEpisodeSelectorSheetState extends State<_MobileSeasonEpisodeS
 
 // ============================================================================
 // OTT PLATFORM CATALOG SCREEN (NETFLIX, HOTSTAR, PRIME, ZEE5, SONYLIV)
+// NO ANIME, NO DAILY SOAPS - ONLY 100% GENUINE MOVIES & WEB SERIES
 // ============================================================================
 class _MobileCategoryGridScreen extends StatefulWidget {
   final String providerName;
@@ -853,7 +882,8 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
       case 'Netflix':
         return '8|175';
       case 'JioHotstar':
-        return '122|220|337'; // Hotstar (122) + JioCinema (220) + Disney+ (337)
+        // Hotstar (122) + JioCinema (220) + Disney+ (337, 390) + HBO (384)
+        return '122|220|337|390|384';
       case 'Prime Video':
         return '119|9';
       case 'ZEE5':
@@ -863,6 +893,22 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
       default:
         return '8';
     }
+  }
+
+  // Double Filter: Block Anime & Daily Soaps in Platform Catalogs
+  bool _isCleanCatalogItem(dynamic m) {
+    final genres = (m['genre_ids'] as List?) ?? [];
+    final origLang = m['original_language']?.toString().toLowerCase() ?? '';
+
+    // Block Anime (16 = Animation, ja = Japanese)
+    if (genres.contains(16) || origLang == 'ja') return false;
+
+    // Block Daily Soaps, Reality TV, Kids, News, Talk
+    if (genres.contains(10766) || genres.contains(10764) || genres.contains(10762) || genres.contains(10763) || genres.contains(10767)) {
+      return false;
+    }
+
+    return true;
   }
 
   Future<void> _loadCatalog() async {
@@ -884,11 +930,13 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
     List<dynamic> fetchedResults = [];
 
     try {
-      final genreFilter = isTv ? '&without_genres=10766,10767,10763' : '';
+      // Anime & Soaps Exclusion query
+      final banFilter = '&without_genres=16,10762,10764,10766,10767,10763';
 
-      final futures = [1, 2, 3].map((page) {
+      // 4 Pages parallel fetch (20 x 4 = 80 items)
+      final futures = [1, 2, 3, 4].map((page) {
         final url = Uri.parse(
-          '${AppConfig.tmdbBase}/$endpoint?api_key=${AppConfig.tmdbKey}&watch_region=IN&with_watch_providers=$providerIds&sort_by=popularity.desc$genreFilter&page=$page',
+          '${AppConfig.tmdbBase}/$endpoint?api_key=${AppConfig.tmdbKey}&watch_region=IN&with_watch_providers=$providerIds&sort_by=popularity.desc$banFilter&vote_count.gte=5&page=$page',
         );
         return http.get(url).timeout(const Duration(seconds: 7));
       }).toList();
@@ -900,11 +948,44 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
           final data = jsonDecode(res.body);
           final rawList = data['results'] as List? ?? [];
           for (var m in rawList) {
+            // Apply strict Anime & Soap filter
+            if (!_isCleanCatalogItem(m)) continue;
+
             final title = isTv ? (m['name'] ?? m['original_name'] ?? '') : (m['title'] ?? m['original_title'] ?? '');
             final posterPath = m['poster_path'];
             final date = isTv ? (m['first_air_date'] ?? '') : (m['release_date'] ?? '');
             final year = date.toString().split('-').first;
 
+            if (posterPath != null && posterPath.toString().isNotEmpty) {
+              fetchedResults.add({
+                'tmdb_id': m['id'],
+                'title': title,
+                'poster': 'https://image.tmdb.org/t/p/w500$posterPath',
+                'backdrop': m['backdrop_path'] != null ? 'https://image.tmdb.org/t/p/w780${m['backdrop_path']}' : '',
+                'year': year,
+                'rating': (m['vote_average'] ?? 0.0).toString(),
+                'isTv': isTv,
+              });
+            }
+          }
+        }
+      }
+
+      // Hotstar / Platform Fallback: Agar results kam ho to Network IDs se fetch karein
+      if (fetchedResults.length < 25 && isTv && widget.providerName == 'JioHotstar') {
+        final fallbackUrl = Uri.parse(
+          '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=3919|3671|2739$banFilter&sort_by=popularity.desc&page=1',
+        );
+        final fbRes = await http.get(fallbackUrl).timeout(const Duration(seconds: 6));
+        if (fbRes.statusCode == 200) {
+          final data = jsonDecode(fbRes.body);
+          final rawList = data['results'] as List? ?? [];
+          for (var m in rawList) {
+            if (!_isCleanCatalogItem(m)) continue;
+            final title = m['name'] ?? m['original_name'] ?? '';
+            final posterPath = m['poster_path'];
+            final date = m['first_air_date'] ?? '';
+            final year = date.toString().split('-').first;
             if (posterPath != null && posterPath.toString().isNotEmpty) {
               fetchedResults.add({
                 'tmdb_id': m['id'],
