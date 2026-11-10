@@ -1,10 +1,77 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:android_intent_plus/android_intent.dart';
+import 'package:android_intent_plus/flag.dart';
 import '../services/stream_service.dart';
 import '../internal_player.dart';
+
+// TV Remote Focusable Widget for Modal
+class _TvStreamFocusable extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  final BorderRadius? borderRadius;
+  final Color focusColor;
+
+  const _TvStreamFocusable({
+    required this.child,
+    required this.onTap,
+    this.borderRadius,
+    this.focusColor = const Color(0xFF0072D2),
+  });
+
+  @override
+  State<_TvStreamFocusable> createState() => _TvStreamFocusableState();
+}
+
+class _TvStreamFocusableState extends State<_TvStreamFocusable> {
+  bool _isFocused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      onFocusChange: (focused) => setState(() => _isFocused = focused),
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.select ||
+              event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.space ||
+              event.logicalKey == LogicalKeyboardKey.gameButtonA) {
+            widget.onTap();
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: widget.borderRadius ?? BorderRadius.circular(8),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          decoration: BoxDecoration(
+            borderRadius: widget.borderRadius ?? BorderRadius.circular(8),
+            border: Border.all(
+              color: _isFocused ? widget.focusColor : Colors.transparent,
+              width: _isFocused ? 2.5 : 0,
+            ),
+            boxShadow: _isFocused
+                ? [
+                    BoxShadow(
+                      color: widget.focusColor.withOpacity(0.6),
+                      blurRadius: 10,
+                      spreadRadius: 1.5,
+                    )
+                  ]
+                : null,
+          ),
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
 
 class MobileQualitySelectorSheet extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -46,7 +113,6 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     _fetchBothStreamsInParallel();
   }
 
-  // Audio Hindi check
   bool _isHindiAudioStream(String name) {
     final lower = name.toLowerCase();
     return lower.contains('hindi') ||
@@ -81,7 +147,6 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     return cleanVod == cleanQuery || cleanVod.startsWith(cleanQuery);
   }
 
-  // 1. XTREAM IPTV STREAMS SEARCH
   Future<List<Map<String, dynamic>>> _searchXtreamStreams() async {
     List<Map<String, dynamic>> xtreamResults = [];
 
@@ -105,7 +170,6 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
 
       try {
         if (!isTv) {
-          // MOVIE SEARCH
           List<dynamic>? vodList = _vodCache[host];
 
           if (vodList == null) {
@@ -167,7 +231,6 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
             }
           }
         } else {
-          // SERIES SEARCH
           final seasonNum = widget.season ?? 1;
           final episodeNum = widget.episode ?? 1;
 
@@ -255,9 +318,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     return xtreamResults;
   }
 
-  // 2. PARALLEL EXECUTION (XTREAM + CASTLE TV / RENDER CLOUD SIMULTANEOUSLY)
   Future<void> _fetchBothStreamsInParallel() async {
-    // TMDB ID normalization
     final itemData = Map<String, dynamic>.from(widget.item);
     if (itemData['id'] == null && itemData['tmdb_id'] != null) {
       itemData['id'] = itemData['tmdb_id'];
@@ -266,7 +327,6 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
       itemData['tmdb_id'] = itemData['id'];
     }
 
-    // Ensure Render Cloud Provider exists
     List<dynamic> activeProvidersList = List.from(widget.providers);
     bool hasRenderProvider = activeProvidersList.any((p) =>
         p is Map &&
@@ -284,7 +344,6 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     List<dynamic> xtreamStreams = [];
     List<dynamic> cloudStreams = [];
 
-    // TASK 1: Castle TV & Render Cloud (Runs independently in parallel)
     final cloudTask = MobileStreamService.getDirectStreams(
       item: itemData,
       providers: activeProvidersList,
@@ -295,7 +354,6 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
         cloudStreams = results;
         if (mounted) {
           setState(() {
-            // Castle TV stream milte hi UI me turant show kar dein
             streams = [...xtreamStreams, ...cloudStreams];
             loading = false;
           });
@@ -303,13 +361,11 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
       }
     }).catchError((_) {});
 
-    // TASK 2: Xtream IPTV Servers (Runs independently in parallel)
     final xtreamTask = _searchXtreamStreams().then((results) {
       if (results.isNotEmpty) {
         xtreamStreams = results;
         if (mounted) {
           setState(() {
-            // Xtream link aate hi sabse upar laga dein
             streams = [...xtreamStreams, ...cloudStreams];
             loading = false;
           });
@@ -317,7 +373,6 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
       }
     }).catchError((_) {});
 
-    // Dono tasks ke complete hone ka wait karein
     await Future.wait([cloudTask, xtreamTask]);
 
     if (mounted) {
@@ -356,29 +411,40 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     } catch (_) {}
   }
 
+  // 100% WORKING TV & MOBILE PLAY FUNCTION
   void _playStream(String url, bool isVlc) async {
     await _saveContinueWatching();
     if (!mounted) return;
-    Navigator.of(context).pop();
 
+    final nav = Navigator.of(context, rootNavigator: true);
     final cleanUrl = url.trim();
 
     if (isVlc) {
-      final intent = AndroidIntent(
-        action: 'action_view',
-        data: cleanUrl,
-        type: 'video/*',
-      );
-      await intent.launch();
+      try {
+        final intent = AndroidIntent(
+          action: 'action_view',
+          data: cleanUrl,
+          type: 'video/*',
+          flags: const [Flag.FLAG_ACTIVITY_NEW_TASK],
+        );
+        await intent.launch();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('VLC ya External Player install nahi hai!')),
+          );
+        }
+      }
     } else {
-      Navigator.push(
-        context,
+      // Sheet ko band karke player open karein
+      nav.pop();
+      nav.push(
         MaterialPageRoute(
           builder: (_) => InternalPlayerScreen(
             videoUrl: cleanUrl,
             title: widget.season != null
                 ? '${widget.item['title']} (S${widget.season} E${widget.episode})'
-                : widget.item['title'],
+                : widget.item['title'] ?? 'Playing',
           ),
         ),
       );
@@ -387,9 +453,12 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final isTv = size.width > 600;
+
     return Container(
-      padding: const EdgeInsets.all(18),
-      height: MediaQuery.of(context).size.height * 0.6,
+      padding: EdgeInsets.all(isTv ? 24 : 18),
+      height: size.height * (isTv ? 0.75 : 0.6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -403,7 +472,11 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                       : widget.item['title'] ?? 'Select Server',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: isTv ? 20 : 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -438,83 +511,95 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                   final isHindi = s['isHindi'] == true;
                   final isXtream = s['isXtream'] == true;
 
-                  return Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E2029),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: isHindi
-                            ? const Color(0xFF10B981)
-                            : (isXtream ? const Color(0xFF0072D2) : Colors.white10),
-                        width: isHindi ? 1.5 : 1.0,
+                  // Pura Card Focusable hai (TV Remote ka OK dabate hi Play hoga)
+                  return _TvStreamFocusable(
+                    onTap: () => _playStream(s['url'], false),
+                    focusColor: const Color(0xFF0072D2),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: EdgeInsets.all(isTv ? 14 : 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E2029),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isHindi
+                              ? const Color(0xFF10B981)
+                              : (isXtream ? const Color(0xFF0072D2) : Colors.white10),
+                          width: isHindi ? 1.5 : 1.0,
+                        ),
                       ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  if (isXtream)
-                                    Container(
-                                      margin: const EdgeInsets.only(right: 6),
-                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF0072D2),
-                                        borderRadius: BorderRadius.circular(3),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    if (isXtream)
+                                      Container(
+                                        margin: const EdgeInsets.only(right: 6),
+                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF0072D2),
+                                          borderRadius: BorderRadius.circular(3),
+                                        ),
+                                        child: const Text(
+                                          'IPTV',
+                                          style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+                                        ),
                                       ),
-                                      child: const Text(
-                                        'IPTV',
-                                        style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+                                    if (isHindi)
+                                      Container(
+                                        margin: const EdgeInsets.only(right: 6),
+                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF10B981),
+                                          borderRadius: BorderRadius.circular(3),
+                                        ),
+                                        child: const Text(
+                                          'HINDI AUDIO',
+                                          style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.black),
+                                        ),
+                                      ),
+                                    Expanded(
+                                      child: Text(
+                                        s['title'] ?? '',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: isTv ? 15 : 13,
+                                        ),
                                       ),
                                     ),
-                                  if (isHindi)
-                                    Container(
-                                      margin: const EdgeInsets.only(right: 6),
-                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF10B981),
-                                        borderRadius: BorderRadius.circular(3),
-                                      ),
-                                      child: const Text(
-                                        'HINDI AUDIO',
-                                        style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.black),
-                                      ),
-                                    ),
-                                  Expanded(
-                                    child: Text(
-                                      s['title'] ?? '',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                s['server'] ?? '',
-                                style: TextStyle(
-                                  color: isXtream ? const Color(0xFF38BDF8) : Colors.white54,
-                                  fontSize: 11,
-                                  fontWeight: isXtream ? FontWeight.bold : FontWeight.normal,
+                                  ],
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  s['server'] ?? '',
+                                  style: TextStyle(
+                                    color: isXtream ? const Color(0xFF38BDF8) : Colors.white54,
+                                    fontSize: isTv ? 13 : 11,
+                                    fontWeight: isXtream ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.play_circle_fill, color: Color(0xFF0072D2), size: 28),
-                          onPressed: () => _playStream(s['url'], false),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.open_in_new, color: Colors.amber, size: 24),
-                          onPressed: () => _playStream(s['url'], true),
-                        ),
-                      ],
+                          // Direct Play Button
+                          IconButton(
+                            icon: Icon(Icons.play_circle_fill, color: const Color(0xFF0072D2), size: isTv ? 34 : 28),
+                            onPressed: () => _playStream(s['url'], false),
+                          ),
+                          // External VLC Button
+                          IconButton(
+                            icon: Icon(Icons.open_in_new, color: Colors.amber, size: isTv ? 28 : 24),
+                            onPressed: () => _playStream(s['url'], true),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },
