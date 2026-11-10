@@ -27,10 +27,9 @@ class MobileQualitySelectorSheet extends StatefulWidget {
 }
 
 class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet> {
-  var streams = [];
+  List<dynamic> streams = [];
   bool loading = true;
-  String currentStatus = 'Connecting to IPTV servers...';
-  List<String> debugLogs = [];
+  String currentStatus = 'Finding best streaming servers...';
 
   static final Map<String, List<dynamic>> _vodCache = {};
   static final Map<String, List<dynamic>> _seriesCache = {};
@@ -44,10 +43,10 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
   @override
   void initState() {
     super.initState();
-    _fetchAllStreams();
+    _fetchBothStreamsInParallel();
   }
 
-  // Check karein ki audio Hindi / Hindi Dubbed hai ya nahi
+  // Audio Hindi check
   bool _isHindiAudioStream(String name) {
     final lower = name.toLowerCase();
     return lower.contains('hindi') ||
@@ -73,20 +72,16 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
   bool _isStrictMatch(String vodName, String cleanQuery, String? targetYear) {
     final cleanVod = _cleanTitle(vodName);
     if (cleanVod.isEmpty || cleanQuery.isEmpty) return false;
-
-    if (!cleanVod.contains(cleanQuery)) {
-      return false;
-    }
+    if (!cleanVod.contains(cleanQuery)) return false;
 
     if (targetYear != null && targetYear.length == 4) {
-      if (vodName.contains(targetYear)) {
-        return true;
-      }
+      if (vodName.contains(targetYear)) return true;
     }
 
     return cleanVod == cleanQuery || cleanVod.startsWith(cleanQuery);
   }
 
+  // 1. XTREAM IPTV STREAMS SEARCH
   Future<List<Map<String, dynamic>>> _searchXtreamStreams() async {
     List<Map<String, dynamic>> xtreamResults = [];
 
@@ -108,13 +103,9 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
 
       if (host == null || user == null || pass == null || host.isEmpty) continue;
 
-      if (mounted) {
-        setState(() => currentStatus = 'Searching: $serverName...');
-      }
-
       try {
         if (!isTv) {
-          // === MOVIE STREAM SEARCH ===
+          // MOVIE SEARCH
           List<dynamic>? vodList = _vodCache[host];
 
           if (vodList == null) {
@@ -124,8 +115,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
               'action': 'get_vod_streams',
             });
 
-            final res = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 35));
-
+            final res = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 25));
             if (res.statusCode == 200) {
               final decoded = jsonDecode(res.body);
               if (decoded is List) {
@@ -138,7 +128,6 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
           if (vodList != null && vodList.isNotEmpty) {
             List<dynamic> allMatches = [];
 
-            // Saari matching movies nikalein
             for (var v in vodList) {
               final vName = v['name']?.toString() ?? '';
               if (tmdbId != null && v['tmdb_id']?.toString() == tmdbId) {
@@ -149,21 +138,17 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
             }
 
             if (allMatches.isNotEmpty) {
-              // HINDI AUDIO FILTER: Hindi / Hindi Dubbed ko Sabse Upar Rank Karein
               allMatches.sort((a, b) {
                 final aName = a['name']?.toString() ?? '';
                 final bName = b['name']?.toString() ?? '';
                 final aHindi = _isHindiAudioStream(aName);
                 final bHindi = _isHindiAudioStream(bName);
-
-                if (aHindi && !bHindi) return -1; // Hindi pehle aayega
+                if (aHindi && !bHindi) return -1;
                 if (!aHindi && bHindi) return 1;
                 return 0;
               });
 
-              // Agar Hindi version mil gaya, to Hindi version hi add karein
               final topMatches = allMatches.take(2).toList();
-
               for (var matchedVod in topMatches) {
                 final streamId = matchedVod['stream_id'];
                 final ext = matchedVod['container_extension'] ?? 'mp4';
@@ -182,7 +167,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
             }
           }
         } else {
-          // === WEB SERIES STREAM SEARCH ===
+          // SERIES SEARCH
           final seasonNum = widget.season ?? 1;
           final episodeNum = widget.episode ?? 1;
 
@@ -194,7 +179,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
               'action': 'get_series',
             });
 
-            final res = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 30));
+            final res = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 25));
             if (res.statusCode == 200) {
               final decoded = jsonDecode(res.body);
               if (decoded is List) {
@@ -214,7 +199,6 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
               }
             }
 
-            // Series me bhi HINDI Dubbed series ko priority dein
             matchedSeriesList.sort((a, b) {
               final aHindi = _isHindiAudioStream(a['name']?.toString() ?? '');
               final bHindi = _isHindiAudioStream(b['name']?.toString() ?? '');
@@ -271,23 +255,74 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     return xtreamResults;
   }
 
-  Future<void> _fetchAllStreams() async {
-    final xtreamList = await _searchXtreamStreams();
+  // 2. PARALLEL EXECUTION (XTREAM + CASTLE TV / RENDER CLOUD SIMULTANEOUSLY)
+  Future<void> _fetchBothStreamsInParallel() async {
+    // TMDB ID normalization
+    final itemData = Map<String, dynamic>.from(widget.item);
+    if (itemData['id'] == null && itemData['tmdb_id'] != null) {
+      itemData['id'] = itemData['tmdb_id'];
+    }
+    if (itemData['tmdb_id'] == null && itemData['id'] != null) {
+      itemData['tmdb_id'] = itemData['id'];
+    }
 
-    List standardList = [];
-    try {
-      final results = await MobileStreamService.getDirectStreams(
-        item: widget.item,
-        providers: widget.providers,
-        season: widget.season,
-        episode: widget.episode,
-      );
-      if (results is List) standardList = results;
-    } catch (_) {}
+    // Ensure Render Cloud Provider exists
+    List<dynamic> activeProvidersList = List.from(widget.providers);
+    bool hasRenderProvider = activeProvidersList.any((p) =>
+        p is Map &&
+        (p['url']?.toString().contains('onrender') == true ||
+            p['name']?.toString().toLowerCase().contains('render') == true));
+
+    if (!hasRenderProvider) {
+      activeProvidersList.insert(0, {
+        'name': 'Render Cloud API',
+        'type': 'embed',
+        'url': 'https://tmdb-embed-api-4.onrender.com'
+      });
+    }
+
+    List<dynamic> xtreamStreams = [];
+    List<dynamic> cloudStreams = [];
+
+    // TASK 1: Castle TV & Render Cloud (Runs independently in parallel)
+    final cloudTask = MobileStreamService.getDirectStreams(
+      item: itemData,
+      providers: activeProvidersList,
+      season: widget.season,
+      episode: widget.episode,
+    ).then((results) {
+      if (results is List && results.isNotEmpty) {
+        cloudStreams = results;
+        if (mounted) {
+          setState(() {
+            // Castle TV stream milte hi UI me turant show kar dein
+            streams = [...xtreamStreams, ...cloudStreams];
+            loading = false;
+          });
+        }
+      }
+    }).catchError((_) {});
+
+    // TASK 2: Xtream IPTV Servers (Runs independently in parallel)
+    final xtreamTask = _searchXtreamStreams().then((results) {
+      if (results.isNotEmpty) {
+        xtreamStreams = results;
+        if (mounted) {
+          setState(() {
+            // Xtream link aate hi sabse upar laga dein
+            streams = [...xtreamStreams, ...cloudStreams];
+            loading = false;
+          });
+        }
+      }
+    }).catchError((_) {});
+
+    // Dono tasks ke complete hone ka wait karein
+    await Future.wait([cloudTask, xtreamTask]);
 
     if (mounted) {
       setState(() {
-        streams = [...xtreamList, ...standardList];
+        streams = [...xtreamStreams, ...cloudStreams];
         loading = false;
       });
     }
@@ -374,7 +409,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
             ],
           ),
           const SizedBox(height: 12),
-          if (loading)
+          if (loading && streams.isEmpty)
             Expanded(
               child: Center(
                 child: Column(
