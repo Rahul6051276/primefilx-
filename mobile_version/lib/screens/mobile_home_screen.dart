@@ -14,7 +14,6 @@ import '../internal_player.dart';
 
 const String kGistPermanentRawUrl = "https://gist.githubusercontent.com/Rahul6051276/5b0a18b2cf69a99d1d3e06629fcbc70a/raw";
 
-// TV REMOTE D-PAD FOCUS WIDGET
 class TvFocusable extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
@@ -127,7 +126,13 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     });
   }
 
-  // 1. INSTANT LOCAL CACHE LOAD (0.05s ME POSTERS LOAD HONGE, NO GREY BOX)
+  String _formatRating(dynamic r) {
+    if (r == null) return '';
+    final d = double.tryParse(r.toString());
+    if (d == null || d == 0.0) return '';
+    return d.toStringAsFixed(1);
+  }
+
   Future<void> _loadCachedDataInstantly() async {
     try {
       final p = await SharedPreferences.getInstance();
@@ -143,11 +148,9 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     } catch (_) {}
   }
 
-  // 2. CRASH-PROOF INDEPENDENT DATA FETCH (TV WI-FI FRIENDLY)
   Future<void> _fetchAllDataLightningFast() async {
     final p = await SharedPreferences.getInstance();
 
-    // Fetch Gist
     try {
       final res = await http.get(Uri.parse("$kGistPermanentRawUrl?t=${DateTime.now().millisecondsSinceEpoch}")).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
@@ -166,8 +169,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       return true;
     }
 
-    // Helper to fetch single category safely without killing other categories
-    Future<void> fetchCategory(String url, Function(List) setFn, String cacheKey, {bool isTv = false}) async {
+    Future<void> fetchCat(String url, Function(List) setFn, String key, {bool isTv = false}) async {
       try {
         final r = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 12));
         if (r.statusCode == 200) {
@@ -175,41 +177,18 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           if (list.isNotEmpty) {
             final parsed = CatalogService.parseResults(list, isTv: isTv);
             setFn(parsed);
-            p.setString(cacheKey, jsonEncode(parsed));
+            p.setString(key, jsonEncode(parsed));
           }
         }
       } catch (_) {}
     }
 
-    // Har category azaad ho kar load hogi (Koi ek fail ho to doosra nahi rukega)
     await Future.wait([
-      fetchCategory(
-        '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&without_genres=16',
-        (l) { bollywoodLatest = l; heroBanners = l.take(6).toList(); _startCarouselTimer(heroBanners.length); },
-        'c_bolly',
-      ),
-      fetchCategory(
-        '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&without_genres=16',
-        (l) => southMovies = l,
-        'c_south',
-      ),
-      fetchCategory(
-        '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&without_genres=16',
-        (l) => hollywoodHindiDubbed = l,
-        'c_holly',
-      ),
-      fetchCategory(
-        '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=1024|213|3919|2893|2892|3671&with_original_language=hi&without_genres=16,10762,10764,10766,10767,10763&vote_count.gte=10&sort_by=popularity.desc',
-        (l) => hindiWebSeries = l,
-        'c_hitv',
-        isTv: true,
-      ),
-      fetchCategory(
-        '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=213|1024|49|2739|2552&without_genres=16,10762,10764,10766,10767,10763&vote_count.gte=20&sort_by=popularity.desc',
-        (l) => englishWebSeries = l,
-        'c_entv',
-        isTv: true,
-      ),
+      fetchCat('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&without_genres=16', (l) { bollywoodLatest = l; heroBanners = l.take(6).toList(); _startCarouselTimer(heroBanners.length); }, 'c_bolly'),
+      fetchCat('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&without_genres=16', (l) => southMovies = l, 'c_south'),
+      fetchCat('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&without_genres=16', (l) => hollywoodHindiDubbed = l, 'c_holly'),
+      fetchCat('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=1024|213|3919|2893|2892|3671&with_original_language=hi&without_genres=16,10762,10764,10766,10767,10763&vote_count.gte=10&sort_by=popularity.desc', (l) => hindiWebSeries = l, 'c_hitv', isTv: true),
+      fetchCat('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=213|1024|49|2739|2552&without_genres=16,10762,10764,10766,10767,10763&vote_count.gte=20&sort_by=popularity.desc', (l) => englishWebSeries = l, 'c_entv', isTv: true),
     ]);
 
     if (mounted) setState(() => isLoading = false);
@@ -330,7 +309,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  // BANNER CRASH FIX (Safe Fallback to Poster so banner never disappears)
   Widget _buildCarousel(bool isTv) {
     if (heroBanners.isEmpty) return const SizedBox.shrink();
     return SizedBox(
@@ -339,9 +317,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         controller: _bannerController, onPageChanged: (i) => setState(() => _currentBannerIndex = i), itemCount: heroBanners.length,
         itemBuilder: (ctx, i) {
           final item = heroBanners[i];
-          final imgUrl = (item['backdrop'] != null && item['backdrop'].toString().isNotEmpty)
-              ? item['backdrop']
-              : (item['poster'] ?? '');
+          final imgUrl = (item['backdrop'] != null && item['backdrop'].toString().isNotEmpty) ? item['backdrop'] : (item['poster'] ?? '');
+          final ratingStr = _formatRating(item['rating']);
 
           return TvFocusable(
             onTap: () => _onItemTapped(item), onLongPress: () => _addToMyList(item), borderRadius: BorderRadius.circular(14),
@@ -355,7 +332,27 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               child: Container(
                 decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), gradient: LinearGradient(colors: [Colors.transparent, Colors.black.withOpacity(0.85)], begin: Alignment.topCenter, end: Alignment.bottomCenter)),
                 padding: const EdgeInsets.all(16), alignment: Alignment.bottomCenter,
-                child: Text(item['title'] ?? '', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: isTv ? 24 : 20, fontWeight: FontWeight.w900)),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(child: Text(item['title'] ?? '', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: isTv ? 24 : 18, fontWeight: FontWeight.w900))),
+                    if (ratingStr.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.black.withOpacity(0.8), borderRadius: BorderRadius.circular(5), border: Border.all(color: Colors.amber, width: 1)),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
+                            const SizedBox(width: 3),
+                            Text(ratingStr, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
           );
@@ -391,7 +388,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  // TV RAM OPTIMIZED POSTERS (cacheWidth: 300 lagaya hai taaki TV crash na ho)
   Widget _buildRow(String title, List items, bool isTv) {
     if (items.isEmpty) return const SizedBox.shrink();
     return Column(
@@ -405,6 +401,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
             itemBuilder: (ctx, i) {
               final item = items[i];
               final pUrl = (item['poster'] ?? '').toString();
+              final ratingStr = _formatRating(item['rating']);
+
               return TvFocusable(
                 onTap: () => _onItemTapped(item), onLongPress: () => _addToMyList(item), borderRadius: BorderRadius.circular(8),
                 child: Container(
@@ -415,15 +413,34 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                       Expanded(
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: (pUrl.isNotEmpty)
-                              ? Image.network(
-                                  pUrl,
-                                  fit: BoxFit.cover,
-                                  width: double.infinity,
-                                  cacheWidth: 300, // TV GPU RAM Saver
-                                  errorBuilder: (_, __, ___) => Container(color: Colors.grey[850], child: const Icon(Icons.broken_image, color: Colors.white24)),
-                                )
-                              : Container(color: Colors.grey[850], child: const Icon(Icons.movie, color: Colors.white24)),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              (pUrl.isNotEmpty)
+                                  ? Image.network(
+                                      pUrl, fit: BoxFit.cover, width: double.infinity, cacheWidth: 300,
+                                      errorBuilder: (_, __, ___) => Container(color: Colors.grey[850], child: const Icon(Icons.broken_image, color: Colors.white24)),
+                                    )
+                                  : Container(color: Colors.grey[850], child: const Icon(Icons.movie, color: Colors.white24)),
+                              // GOLDEN RATING BADGE
+                              if (ratingStr.isNotEmpty)
+                                Positioned(
+                                  top: 5, right: 5,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.85), borderRadius: BorderRadius.circular(4), border: Border.all(color: Colors.amber.withOpacity(0.8), width: 0.8)),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.star_rounded, color: Colors.amber, size: 10),
+                                        const SizedBox(width: 2),
+                                        Text(ratingStr, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -440,7 +457,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 }
 
-// SEASON & EPISODE SELECTOR
 class _MobileSeasonEpisodeSelectorSheet extends StatefulWidget {
   final Map<String, dynamic> item;
   final List activeProviders, xtreamAccounts;
@@ -543,7 +559,6 @@ class _MobileSeasonEpisodeSelectorSheetState extends State<_MobileSeasonEpisodeS
   }
 }
 
-// OTT PLATFORM CATALOG SCREEN (TV REMOTE TABS + 6 COLUMNS + LOW RAM OPTIMIZED)
 class _MobileCategoryGridScreen extends StatefulWidget {
   final String providerName; final Color providerColor; final Function(dynamic) onItemTapped, onItemLongPressed;
   const _MobileCategoryGridScreen({required this.providerName, required this.providerColor, required this.onItemTapped, required this.onItemLongPressed});
@@ -566,6 +581,13 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
     return '8|175';
   }
 
+  String _formatRating(dynamic r) {
+    if (r == null) return '';
+    final d = double.tryParse(r.toString());
+    if (d == null || d == 0.0) return '';
+    return d.toStringAsFixed(1);
+  }
+
   Future<void> _loadCatalog() async {
     if (_cache.containsKey(selectedType)) { setState(() { items = _cache[selectedType]!; isLoading = false; }); return; }
     setState(() => isLoading = true);
@@ -573,7 +595,6 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
     final ids = _getIds(widget.providerName);
     List<dynamic> res = [];
 
-    // TV SAFE INDEPENDENT PAGE FETCH (12s Timeout)
     try {
       final reqs = await Future.wait([1, 2, 3, 4].map((page) =>
         http.get(Uri.parse('${AppConfig.tmdbBase}/$ep?api_key=${AppConfig.tmdbKey}&watch_region=IN&with_watch_providers=$ids&sort_by=popularity.desc&without_genres=16,10762,10764,10766,10767,10763&page=$page'))
@@ -595,7 +616,6 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
         }
       }
 
-      // Hotstar Fallback for full 60+ catalog
       if (res.length < 25 && widget.providerName.contains('Hotstar')) {
         final fb = isTv ? '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=3919|2739&without_genres=16,10766&sort_by=popularity.desc&page=1' : '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_companies=2|420|3&without_genres=16&sort_by=popularity.desc&page=1';
         final fbR = await http.get(Uri.parse(fb)).timeout(const Duration(seconds: 10)).catchError((_) => http.Response('{}', 408));
@@ -625,7 +645,6 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
           Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: widget.providerColor, borderRadius: BorderRadius.circular(6)), child: Text(widget.providerName.toUpperCase(), style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: isTv ? 13 : 11))),
           const SizedBox(width: 8), Text('(${items.length})', style: const TextStyle(color: Colors.white54, fontSize: 13)),
         ]),
-        // TV REMOTE TABS: MOVIES VS WEB SERIES
         actions: [
           Center(
             child: Row(
@@ -665,6 +684,8 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
               itemBuilder: (ctx, i) {
                 final it = items[i];
                 final pUrl = (it['poster'] ?? '').toString();
+                final ratingStr = _formatRating(it['rating']);
+
                 return TvFocusable(
                   onTap: () => widget.onItemTapped(it), onLongPress: () => widget.onItemLongPressed(it), focusColor: widget.providerColor, borderRadius: BorderRadius.circular(8),
                   child: Column(
@@ -673,15 +694,34 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
                       Expanded(
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: (pUrl.isNotEmpty)
-                              ? Image.network(
-                                  pUrl,
-                                  fit: BoxFit.cover,
-                                  width: double.infinity,
-                                  cacheWidth: 300, // TV Low RAM Crash Prevention
-                                  errorBuilder: (_, __, ___) => Container(color: Colors.grey[900], child: const Icon(Icons.broken_image, color: Colors.white24)),
-                                )
-                              : Container(color: Colors.grey[900], child: const Icon(Icons.movie, color: Colors.white24)),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              (pUrl.isNotEmpty)
+                                  ? Image.network(
+                                      pUrl, fit: BoxFit.cover, width: double.infinity, cacheWidth: 300,
+                                      errorBuilder: (_, __, ___) => Container(color: Colors.grey[900], child: const Icon(Icons.broken_image, color: Colors.white24)),
+                                    )
+                                  : Container(color: Colors.grey[900], child: const Icon(Icons.movie, color: Colors.white24)),
+                              // RATING BADGE ON CATEGORY GRID
+                              if (ratingStr.isNotEmpty)
+                                Positioned(
+                                  top: 5, right: 5,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.85), borderRadius: BorderRadius.circular(4), border: Border.all(color: Colors.amber.withOpacity(0.8), width: 0.8)),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.star_rounded, color: Colors.amber, size: 10),
+                                        const SizedBox(width: 2),
+                                        Text(ratingStr, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 4),
