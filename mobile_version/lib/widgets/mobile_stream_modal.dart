@@ -8,6 +8,7 @@ import 'package:android_intent_plus/flag.dart';
 import '../services/stream_service.dart';
 import '../internal_player.dart';
 
+// TV REMOTE D-PAD FOCUS WIDGET
 class _TvModalFocusable extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
@@ -66,14 +67,13 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
   String currentStatus = 'Finding best streaming servers...';
   static final Map<String, List<dynamic>> _vodCache = {};
   static final Map<String, List<dynamic>> _seriesCache = {};
-  static final Map<String, String> _stalkerTokens = {};
 
   final Map<String, String> _iptvHeaders = {'User-Agent': 'IPTVSmartersPro/1.0.0 (Linux; Android 12)', 'Accept': '*/*'};
 
   @override
   void initState() {
     super.initState();
-    _fetchEverythingInParallel();
+    _fetchBothStreamsInParallel();
   }
 
   bool _isHindiAudioStream(String name) {
@@ -90,17 +90,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     return cV == query || cV.startsWith(query);
   }
 
-  dynamic _cleanStalkerJson(String raw) {
-    try {
-      String c = raw.trim();
-      if (c.startsWith('/*-secure-')) c = c.substring(10);
-      if (c.endsWith('*/')) c = c.substring(0, c.length - 2);
-      return jsonDecode(c.trim());
-    } catch (_) {
-      return null;
-    }
-  }
-
+  // 1. XTREAM IPTV SEARCH (LIVEBOX PRO)
   Future<List<Map<String, dynamic>>> _searchXtreamStreams() async {
     List<Map<String, dynamic>> res = [];
     final title = widget.item['title'] ?? widget.item['name'] ?? '';
@@ -176,91 +166,8 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     return res;
   }
 
-  // STALKER PORTAL DIRECT SEARCH WITH PARSER FIX
-  Future<List<Map<String, dynamic>>> _searchStalkerStreams() async {
-    List<Map<String, dynamic>> res = [];
-    final rawTitle = (widget.item['title'] ?? widget.item['name'] ?? '').toString();
-    final cleanTitle = rawTitle.replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '').trim();
-    final bool isTv = widget.season != null || widget.item['isTv'] == true;
-    final type = isTv ? 'series' : 'vod';
-
-    for (var p in widget.providers) {
-      if (p is! Map) continue;
-      final bool isStalker = p['type'] == 'stalker' || (p['mac'] != null && p['portal_url'] != null);
-      if (!isStalker) continue;
-
-      var portalUrl = (p['portal_url'] ?? p['url'])?.toString().trim().replaceAll(RegExp(r'/+$'), '') ?? '';
-      if (portalUrl.endsWith('/c')) portalUrl = portalUrl.substring(0, portalUrl.length - 2).replaceAll(RegExp(r'/+$'), '');
-      final mac = p['mac']?.toString().trim();
-      final sName = p['name']?.toString() ?? 'Stalker Portal';
-      final sn = p['serial_number']?.toString() ?? 'e73857b1e06c0d227d20367c8bd81f1d';
-      final devId1 = p['device_id']?.toString() ?? '9F3DD57FF522B51F28849BB26018507A8C0655C8C39FFB0EBE81BFCC42A9E382';
-      final devId2 = p['device_id2']?.toString() ?? devId1;
-      final sig = p['signature']?.toString() ?? '';
-
-      if (portalUrl.isEmpty || mac == null || mac.isEmpty) continue;
-
-      final loadPaths = ['$portalUrl/server/load.php', '$portalUrl/stalker_portal/server/load.php', '$portalUrl/c/server/load.php'];
-
-      for (var loadUrl in loadPaths) {
-        try {
-          String? token = _stalkerTokens[mac];
-          final magHeaders = {
-            'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3',
-            'Cookie': 'mac=$mac; stb_lang=en; timezone=Europe/Kiev;',
-            'Accept': '*/*',
-            'X-User-Agent': 'Model: MAG250; Link: WiFi',
-          };
-
-          if (token == null) {
-            final hsRes = await http.get(Uri.parse('$loadUrl?type=stb&action=handshake&token=&JsHttpRequest=1-xml'), headers: magHeaders).timeout(const Duration(seconds: 8));
-            if (hsRes.statusCode == 200) {
-              final hsData = _cleanStalkerJson(hsRes.body);
-              token = hsData?['js']?['token']?.toString();
-              if (token != null) {
-                _stalkerTokens[mac] = token;
-                final profUrl = '$loadUrl?type=stb&action=get_profile&hd=1&token=$token&ver=ImageDescription&num_banks=2&sn=$sn&stb_type=MAG250&image_version=218&video_out=hdmi&device_id=$devId1&device_id2=$devId2&signature=$sig&auth_second_step=0&hw_version=1.7-BD-00&not_valid_token=0&client_type=STB&JsHttpRequest=1-xml';
-                await http.get(Uri.parse(profUrl), headers: {...magHeaders, 'Authorization': 'Bearer $token', 'Cookie': 'mac=$mac; token=$token; stb_lang=en; timezone=Europe/Kiev;'}).timeout(const Duration(seconds: 8));
-              }
-            }
-          }
-
-          if (token == null) continue;
-
-          final authHeaders = {...magHeaders, 'Cookie': 'mac=$mac; token=$token; stb_lang=en; timezone=Europe/Kiev;', 'Authorization': 'Bearer $token'};
-          final sUri = Uri.parse('$loadUrl?type=$type&action=get_ordered_list&sortby=added&p=1&token=$token&search=${Uri.encodeComponent(cleanTitle)}&JsHttpRequest=1-xml');
-          final sRes = await http.get(sUri, headers: authHeaders).timeout(const Duration(seconds: 10));
-
-          if (sRes.statusCode == 200) {
-            final sData = _cleanStalkerJson(sRes.body);
-            final list = (sData?['js']?['data'] as List?) ?? [];
-
-            for (var item in list.take(3)) {
-              final cmd = item['cmd']?.toString();
-              final itemName = item['name']?.toString() ?? cleanTitle;
-              if (cmd == null || cmd.isEmpty) continue;
-
-              final lUri = Uri.parse('$loadUrl?type=$type&action=create_link&cmd=${Uri.encodeComponent(cmd)}&token=$token&JsHttpRequest=1-xml');
-              final lRes = await http.get(lUri, headers: authHeaders).timeout(const Duration(seconds: 8));
-
-              if (lRes.statusCode == 200) {
-                final linkData = _cleanStalkerJson(lRes.body);
-                String? rawCmd = linkData?['js']?['cmd']?.toString();
-                if (rawCmd != null && rawCmd.isNotEmpty) {
-                  final streamUrl = rawCmd.replaceFirst('ffmpeg ', '').trim();
-                  res.add({'title': itemName, 'server': sName, 'url': streamUrl, 'isHindi': _isHindiAudioStream(itemName) || sName.toLowerCase().contains('hindi'), 'isStalker': true});
-                }
-              }
-            }
-          }
-          if (res.isNotEmpty) break;
-        } catch (_) {}
-      }
-    }
-    return res;
-  }
-
-  Future<void> _fetchEverythingInParallel() async {
+  // 2. PARALLEL FETCH: XTREAM + CASTLE TV
+  Future<void> _fetchBothStreamsInParallel() async {
     final itemData = Map<String, dynamic>.from(widget.item);
     if (itemData['id'] == null && itemData['tmdb_id'] != null) itemData['id'] = itemData['tmdb_id'];
     if (itemData['tmdb_id'] == null && itemData['id'] != null) itemData['tmdb_id'] = itemData['id'];
@@ -271,32 +178,24 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     }
 
     List<dynamic> xtreamStreams = [];
-    List<dynamic> stalkerStreams = [];
     List<dynamic> cloudStreams = [];
-
-    final xtreamTask = _searchXtreamStreams().then((r) {
-      if (r.isNotEmpty && mounted) {
-        xtreamStreams = r;
-        setState(() { streams = [...xtreamStreams, ...stalkerStreams, ...cloudStreams]; loading = false; });
-      }
-    }).catchError((_) {});
-
-    final stalkerTask = _searchStalkerStreams().then((r) {
-      if (r.isNotEmpty && mounted) {
-        stalkerStreams = r;
-        setState(() { streams = [...xtreamStreams, ...stalkerStreams, ...cloudStreams]; loading = false; });
-      }
-    }).catchError((_) {});
 
     final cloudTask = MobileStreamService.getDirectStreams(item: itemData, providers: activeList, season: widget.season, episode: widget.episode).then((r) {
       if (r is List && r.isNotEmpty && mounted) {
         cloudStreams = r;
-        setState(() { streams = [...xtreamStreams, ...stalkerStreams, ...cloudStreams]; loading = false; });
+        setState(() { streams = [...xtreamStreams, ...cloudStreams]; loading = false; });
       }
     }).catchError((_) {});
 
-    await Future.wait([xtreamTask, stalkerTask, cloudTask]);
-    if (mounted) setState(() { streams = [...xtreamStreams, ...stalkerStreams, ...cloudStreams]; loading = false; });
+    final xtreamTask = _searchXtreamStreams().then((r) {
+      if (r.isNotEmpty && mounted) {
+        xtreamStreams = r;
+        setState(() { streams = [...xtreamStreams, ...cloudStreams]; loading = false; });
+      }
+    }).catchError((_) {});
+
+    await Future.wait([cloudTask, xtreamTask]);
+    if (mounted) setState(() { streams = [...xtreamStreams, ...cloudStreams]; loading = false; });
   }
 
   Future<void> _saveContinueWatching() async {
@@ -394,22 +293,18 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                   final s = streams[i];
                   final isHindi = s['isHindi'] == true;
                   final isXtream = s['isXtream'] == true;
-                  final isStalker = s['isStalker'] == true;
                   final String streamTitle = s['title'] ?? '';
 
                   return _TvModalFocusable(
                     onTap: () => _showPlayerChoiceDialog(s['url'], streamTitle),
-                    focusColor: isStalker ? const Color(0xFF8B5CF6) : const Color(0xFF0072D2),
+                    focusColor: const Color(0xFF0072D2),
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
                       padding: EdgeInsets.all(isTv ? 14 : 10),
                       decoration: BoxDecoration(
                         color: const Color(0xFF1E2029),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: isStalker ? const Color(0xFF8B5CF6) : (isHindi ? const Color(0xFF10B981) : (isXtream ? const Color(0xFF0072D2) : Colors.white10)),
-                          width: (isStalker || isHindi || isXtream) ? 1.5 : 1.0,
-                        ),
+                        border: Border.all(color: isHindi ? const Color(0xFF10B981) : (isXtream ? const Color(0xFF0072D2) : Colors.white10), width: isHindi ? 1.5 : 1.0),
                       ),
                       child: Row(
                         children: [
@@ -419,13 +314,6 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                               children: [
                                 Row(
                                   children: [
-                                    if (isStalker)
-                                      Container(
-                                        margin: const EdgeInsets.only(right: 6),
-                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                        decoration: BoxDecoration(color: const Color(0xFF8B5CF6), borderRadius: BorderRadius.circular(3)),
-                                        child: const Text('STALKER', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
-                                      ),
                                     if (isXtream)
                                       Container(
                                         margin: const EdgeInsets.only(right: 6),
@@ -444,11 +332,11 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                                   ],
                                 ),
                                 const SizedBox(height: 4),
-                                Text(s['server'] ?? '', style: TextStyle(color: isStalker ? const Color(0xFFA78BFA) : (isXtream ? const Color(0xFF38BDF8) : Colors.white54), fontSize: isTv ? 13 : 11)),
+                                Text(s['server'] ?? '', style: TextStyle(color: isXtream ? const Color(0xFF38BDF8) : Colors.white54, fontSize: isTv ? 13 : 11)),
                               ],
                             ),
                           ),
-                          Icon(Icons.play_circle_fill, color: isStalker ? const Color(0xFF8B5CF6) : const Color(0xFF0072D2), size: isTv ? 32 : 26),
+                          Icon(Icons.play_circle_fill, color: const Color(0xFF0072D2), size: isTv ? 32 : 26),
                         ],
                       ),
                     ),
