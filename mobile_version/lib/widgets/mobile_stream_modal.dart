@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
+import '../services/tmdb_service.dart';
 import '../services/stream_service.dart';
 import '../internal_player.dart';
 
@@ -67,13 +68,14 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
   String currentStatus = 'Finding best streaming servers...';
   static final Map<String, List<dynamic>> _vodCache = {};
   static final Map<String, List<dynamic>> _seriesCache = {};
+  static final Map<String, String> _imdbIdCache = {};
 
   final Map<String, String> _iptvHeaders = {'User-Agent': 'IPTVSmartersPro/1.0.0 (Linux; Android 12)', 'Accept': '*/*'};
 
   @override
   void initState() {
     super.initState();
-    _fetchBothStreamsInParallel();
+    _fetchEverythingInParallel();
   }
 
   bool _isHindiAudioStream(String name) {
@@ -90,7 +92,88 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     return cV == query || cV.startsWith(query);
   }
 
-  // 1. XTREAM IPTV SEARCH (LIVEBOX PRO)
+  // 1. AUTO CONVERT TMDB ID TO IMDB ID (tt1234567) FOR STREMIO
+  Future<String?> _getImdbId(String tmdbId, bool isTv) async {
+    if (_imdbIdCache.containsKey(tmdbId)) return _imdbIdCache[tmdbId];
+    try {
+      final ep = isTv ? 'tv' : 'movie';
+      final url = Uri.parse('${AppConfig.tmdbBase}/$ep/$tmdbId/external_ids?api_key=${AppConfig.tmdbKey}');
+      final res = await http.get(url).timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final imdbId = data['imdb_id']?.toString();
+        if (imdbId != null && imdbId.isNotEmpty) {
+          _imdbIdCache[tmdbId] = imdbId;
+          return imdbId;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // 2. UNIVERSAL STREMIO ADDON STREAM FETCHER (PENGUPLAY, MEDIAFUSION, ETC.)
+  Future<List<Map<String, dynamic>>> _searchStremioStreams() async {
+    List<Map<String, dynamic>> res = [];
+    final tmdbId = widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
+    if (tmdbId == null || tmdbId.isEmpty) return res;
+
+    final bool isTv = widget.season != null || widget.item['isTv'] == true;
+    final imdbId = await _getImdbId(tmdbId, isTv);
+    if (imdbId == null) return res;
+
+    for (var p in widget.providers) {
+      if (p is! Map) continue;
+      final bool isStremio = p['type'] == 'stremio' || (p['url']?.toString().contains('manifest.json') == true);
+      if (!isStremio) continue;
+
+      var baseUrl = (p['url'] ?? p['base_url'])?.toString().trim().replaceAll(RegExp(r'/+$'), '') ?? '';
+      baseUrl = baseUrl.replaceFirst('stremio://', 'https://');
+      if (baseUrl.endsWith('/manifest.json')) {
+        baseUrl = baseUrl.substring(0, baseUrl.length - 14).replaceAll(RegExp(r'/+$'), '');
+      }
+
+      if (baseUrl.isEmpty) continue;
+      final sName = p['name']?.toString() ?? 'Stremio';
+
+      try {
+        final String streamPath = isTv
+            ? '$baseUrl/stream/series/$imdbId:${widget.season ?? 1}:${widget.episode ?? 1}.json'
+            : '$baseUrl/stream/movie/$imdbId.json';
+
+        final r = await http.get(Uri.parse(streamPath), headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': '*/*',
+        }).timeout(const Duration(seconds: 12));
+
+        if (r.statusCode == 200) {
+          final data = jsonDecode(r.body);
+          final streamList = data['streams'] as List? ?? [];
+
+          for (var s in streamList) {
+            final String? directUrl = s['url']?.toString();
+            if (directUrl == null || directUrl.isEmpty || !directUrl.startsWith('http')) continue;
+
+            final String sourceName = s['name']?.toString() ?? sName;
+            final String rawTitle = s['title']?.toString() ?? widget.item['title'] ?? 'Stream';
+            // Clean up multi-line descriptions from Stremio
+            final String displayTitle = rawTitle.split('\n').first.trim();
+            final bool isHindi = _isHindiAudioStream(rawTitle) || sourceName.toLowerCase().contains('hindi');
+
+            res.add({
+              'title': displayTitle,
+              'server': '$sName ($sourceName)',
+              'url': directUrl,
+              'isHindi': isHindi,
+              'isStremio': true,
+            });
+          }
+        }
+      } catch (_) {}
+    }
+    return res;
+  }
+
+  // 3. XTREAM IPTV SEARCH
   Future<List<Map<String, dynamic>>> _searchXtreamStreams() async {
     List<Map<String, dynamic>> res = [];
     final title = widget.item['title'] ?? widget.item['name'] ?? '';
@@ -166,36 +249,43 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     return res;
   }
 
-  // 2. PARALLEL FETCH: XTREAM + CASTLE TV
-  Future<void> _fetchBothStreamsInParallel() async {
+  // 4. PARALLEL MULTI-ENGINE EXECUTION (XTREAM + STREMIO + CLOUD ALL SIMULTANEOUSLY)
+  Future<void> _fetchEverythingInParallel() async {
     final itemData = Map<String, dynamic>.from(widget.item);
     if (itemData['id'] == null && itemData['tmdb_id'] != null) itemData['id'] = itemData['tmdb_id'];
     if (itemData['tmdb_id'] == null && itemData['id'] != null) itemData['tmdb_id'] = itemData['id'];
 
     List<dynamic> activeList = List.from(widget.providers);
-    if (!activeList.any((p) => p is Map && (p['url']?.toString().contains('onrender') == true || p['name']?.toString().toLowerCase().contains('render') == true))) {
-      activeList.insert(0, {'name': 'Render Cloud API', 'type': 'embed', 'url': 'https://tmdb-embed-api-4.onrender.com'});
-    }
-
     List<dynamic> xtreamStreams = [];
+    List<dynamic> stremioStreams = [];
     List<dynamic> cloudStreams = [];
 
-    final cloudTask = MobileStreamService.getDirectStreams(item: itemData, providers: activeList, season: widget.season, episode: widget.episode).then((r) {
-      if (r is List && r.isNotEmpty && mounted) {
-        cloudStreams = r;
-        setState(() { streams = [...xtreamStreams, ...cloudStreams]; loading = false; });
-      }
-    }).catchError((_) {});
-
+    // TASK 1: Xtream IPTV
     final xtreamTask = _searchXtreamStreams().then((r) {
       if (r.isNotEmpty && mounted) {
         xtreamStreams = r;
-        setState(() { streams = [...xtreamStreams, ...cloudStreams]; loading = false; });
+        setState(() { streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams]; loading = false; });
       }
     }).catchError((_) {});
 
-    await Future.wait([cloudTask, xtreamTask]);
-    if (mounted) setState(() { streams = [...xtreamStreams, ...cloudStreams]; loading = false; });
+    // TASK 2: Stremio Addon Engine (PenguPlay, VegaMovies, VidLink)
+    final stremioTask = _searchStremioStreams().then((r) {
+      if (r.isNotEmpty && mounted) {
+        stremioStreams = r;
+        setState(() { streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams]; loading = false; });
+      }
+    }).catchError((_) {});
+
+    // TASK 3: Cloud / Backup (If exists)
+    final cloudTask = MobileStreamService.getDirectStreams(item: itemData, providers: activeList, season: widget.season, episode: widget.episode).then((r) {
+      if (r is List && r.isNotEmpty && mounted) {
+        cloudStreams = r;
+        setState(() { streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams]; loading = false; });
+      }
+    }).catchError((_) {});
+
+    await Future.wait([xtreamTask, stremioTask, cloudTask]);
+    if (mounted) setState(() { streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams]; loading = false; });
   }
 
   Future<void> _saveContinueWatching() async {
@@ -293,18 +383,24 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                   final s = streams[i];
                   final isHindi = s['isHindi'] == true;
                   final isXtream = s['isXtream'] == true;
+                  final isStremio = s['isStremio'] == true;
                   final String streamTitle = s['title'] ?? '';
 
                   return _TvModalFocusable(
                     onTap: () => _showPlayerChoiceDialog(s['url'], streamTitle),
-                    focusColor: const Color(0xFF0072D2),
+                    focusColor: isStremio ? const Color(0xFF8B5CF6) : const Color(0xFF0072D2),
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
                       padding: EdgeInsets.all(isTv ? 14 : 10),
                       decoration: BoxDecoration(
                         color: const Color(0xFF1E2029),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: isHindi ? const Color(0xFF10B981) : (isXtream ? const Color(0xFF0072D2) : Colors.white10), width: isHindi ? 1.5 : 1.0),
+                        border: Border.all(
+                          color: isStremio
+                              ? const Color(0xFF8B5CF6)
+                              : (isHindi ? const Color(0xFF10B981) : (isXtream ? const Color(0xFF0072D2) : Colors.white10)),
+                          width: (isStremio || isHindi || isXtream) ? 1.5 : 1.0,
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -314,6 +410,13 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                               children: [
                                 Row(
                                   children: [
+                                    if (isStremio)
+                                      Container(
+                                        margin: const EdgeInsets.only(right: 6),
+                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                        decoration: BoxDecoration(color: const Color(0xFF8B5CF6), borderRadius: BorderRadius.circular(3)),
+                                        child: const Text('STREMIO', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
+                                      ),
                                     if (isXtream)
                                       Container(
                                         margin: const EdgeInsets.only(right: 6),
@@ -332,11 +435,11 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                                   ],
                                 ),
                                 const SizedBox(height: 4),
-                                Text(s['server'] ?? '', style: TextStyle(color: isXtream ? const Color(0xFF38BDF8) : Colors.white54, fontSize: isTv ? 13 : 11)),
+                                Text(s['server'] ?? '', style: TextStyle(color: isStremio ? const Color(0xFFA78BFA) : (isXtream ? const Color(0xFF38BDF8) : Colors.white54), fontSize: isTv ? 13 : 11, fontWeight: (isStremio || isXtream) ? FontWeight.bold : FontWeight.normal)),
                               ],
                             ),
                           ),
-                          Icon(Icons.play_circle_fill, color: const Color(0xFF0072D2), size: isTv ? 32 : 26),
+                          Icon(Icons.play_circle_fill, color: isStremio ? const Color(0xFF8B5CF6) : const Color(0xFF0072D2), size: isTv ? 32 : 26),
                         ],
                       ),
                     ),
