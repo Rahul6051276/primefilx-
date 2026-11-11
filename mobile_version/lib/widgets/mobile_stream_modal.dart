@@ -66,12 +66,14 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
   String currentStatus = 'Finding best streaming servers...';
   static final Map<String, List<dynamic>> _vodCache = {};
   static final Map<String, List<dynamic>> _seriesCache = {};
+  static final Map<String, String> _stalkerTokens = {};
+
   final Map<String, String> _iptvHeaders = {'User-Agent': 'IPTVSmartersPro/1.0.0 (Linux; Android 12)', 'Accept': '*/*'};
 
   @override
   void initState() {
     super.initState();
-    _fetchBothStreamsInParallel();
+    _fetchEverythingInParallel();
   }
 
   bool _isHindiAudioStream(String name) {
@@ -88,6 +90,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     return cV == query || cV.startsWith(query);
   }
 
+  // 1. XTREAM IPTV SEARCH
   Future<List<Map<String, dynamic>>> _searchXtreamStreams() async {
     List<Map<String, dynamic>> res = [];
     final title = widget.item['title'] ?? widget.item['name'] ?? '';
@@ -110,7 +113,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
           List<dynamic>? vodList = _vodCache[host];
           if (vodList == null) {
             final uri = Uri.parse('$host/player_api.php').replace(queryParameters: {'username': user, 'password': pass, 'action': 'get_vod_streams'});
-            final r = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 25));
+            final r = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 20));
             if (r.statusCode == 200 && jsonDecode(r.body) is List) { vodList = jsonDecode(r.body); _vodCache[host] = vodList!; }
           }
           if (vodList != null && vodList.isNotEmpty) {
@@ -137,14 +140,14 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
           List<dynamic>? sList = _seriesCache[host];
           if (sList == null) {
             final uri = Uri.parse('$host/player_api.php').replace(queryParameters: {'username': user, 'password': pass, 'action': 'get_series'});
-            final r = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 25));
+            final r = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 20));
             if (r.statusCode == 200 && jsonDecode(r.body) is List) { sList = jsonDecode(r.body); _seriesCache[host] = sList!; }
           }
           if (sList != null && sList.isNotEmpty) {
             final target = sList.firstWhere((s) => _clean(s['name']?.toString() ?? '').contains(q), orElse: () => null);
             if (target != null) {
               final infoUri = Uri.parse('$host/player_api.php').replace(queryParameters: {'username': user, 'password': pass, 'action': 'get_series_info', 'series_id': target['series_id'].toString()});
-              final iR = await http.get(infoUri, headers: _iptvHeaders).timeout(const Duration(seconds: 20));
+              final iR = await http.get(infoUri, headers: _iptvHeaders).timeout(const Duration(seconds: 15));
               if (iR.statusCode == 200) {
                 final eps = jsonDecode(iR.body)['episodes'];
                 if (eps is Map && eps[sNum.toString()] != null) {
@@ -163,7 +166,103 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     return res;
   }
 
-  Future<void> _fetchBothStreamsInParallel() async {
+  // 2. STALKER PORTAL (MAG / MAC ADDRESS) DIRECT SEARCH & CREATE LINK
+  Future<List<Map<String, dynamic>>> _searchStalkerStreams() async {
+    List<Map<String, dynamic>> res = [];
+    final title = widget.item['title'] ?? widget.item['name'] ?? '';
+    final cleanTitle = title.trim();
+    final bool isTv = widget.season != null || widget.item['isTv'] == true;
+    final type = isTv ? 'series' : 'vod';
+
+    for (var p in widget.providers) {
+      if (p is! Map) continue;
+      final bool isStalker = p['type'] == 'stalker' || (p['mac'] != null && p['portal_url'] != null);
+      if (!isStalker) continue;
+
+      var portalUrl = (p['portal_url'] ?? p['url'])?.toString().trim().replaceAll(RegExp(r'/+$'), '') ?? '';
+      if (portalUrl.endsWith('/c')) portalUrl = portalUrl.substring(0, portalUrl.length - 2).replaceAll(RegExp(r'/+$'), '');
+      final mac = p['mac']?.toString().trim();
+      final sName = p['name']?.toString() ?? 'Stalker Portal';
+      final sn = p['serial_number']?.toString() ?? 'e73857b1e06c0d227d20367c8bd81f1d';
+      final devId1 = p['device_id']?.toString() ?? '9F3DD57FF522B51F28849BB26018507A8C0655C8C39FFB0EBE81BFCC42A9E382';
+      final devId2 = p['device_id2']?.toString() ?? devId1;
+      final sig = p['signature']?.toString() ?? '';
+
+      if (portalUrl.isEmpty || mac == null || mac.isEmpty) continue;
+      final loadUrl = '$portalUrl/server/load.php';
+
+      try {
+        // Step A: Token / Handshake
+        String? token = _stalkerTokens[mac];
+        if (token == null) {
+          final hsHeaders = {
+            'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3',
+            'Cookie': 'mac=$mac; stb_lang=en; timezone=Europe/Kiev;',
+            'Accept': '*/*',
+          };
+          final hsRes = await http.get(Uri.parse('$loadUrl?type=stb&action=handshake&token=&JsHttpRequest=1-xml'), headers: hsHeaders).timeout(const Duration(seconds: 8));
+          if (hsRes.statusCode == 200) {
+            token = jsonDecode(hsRes.body)['js']?['token']?.toString();
+            if (token != null) {
+              _stalkerTokens[mac] = token;
+              // Profile Auth
+              final profUrl = '$loadUrl?type=stb&action=get_profile&hd=1&token=$token&ver=ImageDescription&num_banks=2&sn=$sn&stb_type=MAG250&image_version=218&video_out=hdmi&device_id=$devId1&device_id2=$devId2&signature=$sig&auth_second_step=0&hw_version=1.7-BD-00&not_valid_token=0&client_type=STB&JsHttpRequest=1-xml';
+              await http.get(Uri.parse(profUrl), headers: {...hsHeaders, 'Authorization': 'Bearer $token', 'Cookie': 'mac=$mac; token=$token; stb_lang=en; timezone=Europe/Kiev;'}).timeout(const Duration(seconds: 8));
+            }
+          }
+        }
+
+        if (token == null) continue;
+
+        final authHeaders = {
+          'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3',
+          'Cookie': 'mac=$mac; token=$token; stb_lang=en; timezone=Europe/Kiev;',
+          'Authorization': 'Bearer $token',
+          'Accept': '*/*',
+        };
+
+        // Step B: Search VOD
+        final sUri = Uri.parse('$loadUrl?type=$type&action=get_ordered_list&sortby=added&p=1&token=$token&search=${Uri.encodeComponent(cleanTitle)}&JsHttpRequest=1-xml');
+        final sRes = await http.get(sUri, headers: authHeaders).timeout(const Duration(seconds: 10));
+
+        if (sRes.statusCode == 200) {
+          final data = jsonDecode(sRes.body);
+          final list = (data['js']?['data'] as List?) ?? [];
+
+          for (var item in list.take(2)) {
+            final cmd = item['cmd']?.toString();
+            final itemName = item['name']?.toString() ?? cleanTitle;
+            if (cmd == null || cmd.isEmpty) continue;
+
+            // Step C: Create Link
+            final lUri = Uri.parse('$loadUrl?type=$type&action=create_link&cmd=${Uri.encodeComponent(cmd)}&token=$token&JsHttpRequest=1-xml');
+            final lRes = await http.get(lUri, headers: authHeaders).timeout(const Duration(seconds: 8));
+
+            if (lRes.statusCode == 200) {
+              final linkData = jsonDecode(lRes.body);
+              String? rawCmd = linkData['js']?['cmd']?.toString();
+              if (rawCmd != null && rawCmd.isNotEmpty) {
+                final streamUrl = rawCmd.replaceFirst('ffmpeg ', '').trim();
+                final bool isHindi = _isHindiAudioStream(itemName) || sName.toLowerCase().contains('hindi');
+
+                res.add({
+                  'title': itemName,
+                  'server': sName,
+                  'url': streamUrl,
+                  'isHindi': isHindi,
+                  'isStalker': true,
+                });
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return res;
+  }
+
+  // 3. PARALLEL EXECUTION: XTREAM + STALKER + CASTLE TV ALL RUN SIMULTANEOUSLY
+  Future<void> _fetchEverythingInParallel() async {
     final itemData = Map<String, dynamic>.from(widget.item);
     if (itemData['id'] == null && itemData['tmdb_id'] != null) itemData['id'] = itemData['tmdb_id'];
     if (itemData['tmdb_id'] == null && itemData['id'] != null) itemData['tmdb_id'] = itemData['id'];
@@ -174,29 +273,41 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     }
 
     List<dynamic> xtreamStreams = [];
+    List<dynamic> stalkerStreams = [];
     List<dynamic> cloudStreams = [];
 
-    final cloudTask = MobileStreamService.getDirectStreams(item: itemData, providers: activeList, season: widget.season, episode: widget.episode).then((r) {
-      if (r is List && r.isNotEmpty) {
-        cloudStreams = r;
-        if (mounted) setState(() { streams = [...xtreamStreams, ...cloudStreams]; loading = false; });
-      }
-    }).catchError((_) {});
-
+    // TASK 1: Xtream IPTV
     final xtreamTask = _searchXtreamStreams().then((r) {
-      if (r.isNotEmpty) {
+      if (r.isNotEmpty && mounted) {
         xtreamStreams = r;
-        if (mounted) setState(() { streams = [...xtreamStreams, ...cloudStreams]; loading = false; });
+        setState(() { streams = [...xtreamStreams, ...stalkerStreams, ...cloudStreams]; loading = false; });
       }
     }).catchError((_) {});
 
-    await Future.wait([cloudTask, xtreamTask]);
-    if (mounted) setState(() { streams = [...xtreamStreams, ...cloudStreams]; loading = false; });
+    // TASK 2: Stalker Portal (CloudCDN VIP)
+    final stalkerTask = _searchStalkerStreams().then((r) {
+      if (r.isNotEmpty && mounted) {
+        stalkerStreams = r;
+        setState(() { streams = [...xtreamStreams, ...stalkerStreams, ...cloudStreams]; loading = false; });
+      }
+    }).catchError((_) {});
+
+    // TASK 3: Castle TV & Render Cloud
+    final cloudTask = MobileStreamService.getDirectStreams(item: itemData, providers: activeList, season: widget.season, episode: widget.episode).then((r) {
+      if (r is List && r.isNotEmpty && mounted) {
+        cloudStreams = r;
+        setState(() { streams = [...xtreamStreams, ...stalkerStreams, ...cloudStreams]; loading = false; });
+      }
+    }).catchError((_) {});
+
+    await Future.wait([xtreamTask, stalkerTask, cloudTask]);
+    if (mounted) setState(() { streams = [...xtreamStreams, ...stalkerStreams, ...cloudStreams]; loading = false; });
   }
 
   Future<void> _saveContinueWatching() async {
     try {
       final p = await SharedPreferences.getInstance();
+      await p.reload();
       var c = jsonDecode(p.getString('continue_watching_mobile') ?? '[]');
       if (c is List) {
         c.removeWhere((item) => item['tmdb_id'].toString() == widget.item['tmdb_id'].toString());
@@ -288,18 +399,24 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                   final s = streams[i];
                   final isHindi = s['isHindi'] == true;
                   final isXtream = s['isXtream'] == true;
+                  final isStalker = s['isStalker'] == true;
                   final String streamTitle = s['title'] ?? '';
 
                   return _TvModalFocusable(
                     onTap: () => _showPlayerChoiceDialog(s['url'], streamTitle),
-                    focusColor: const Color(0xFF0072D2),
+                    focusColor: isStalker ? const Color(0xFF8B5CF6) : const Color(0xFF0072D2),
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
                       padding: EdgeInsets.all(isTv ? 14 : 10),
                       decoration: BoxDecoration(
                         color: const Color(0xFF1E2029),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: isHindi ? const Color(0xFF10B981) : (isXtream ? const Color(0xFF0072D2) : Colors.white10), width: isHindi ? 1.5 : 1.0),
+                        border: Border.all(
+                          color: isStalker
+                              ? const Color(0xFF8B5CF6)
+                              : (isHindi ? const Color(0xFF10B981) : (isXtream ? const Color(0xFF0072D2) : Colors.white10)),
+                          width: (isStalker || isHindi || isXtream) ? 1.5 : 1.0,
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -309,6 +426,13 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                               children: [
                                 Row(
                                   children: [
+                                    if (isStalker)
+                                      Container(
+                                        margin: const EdgeInsets.only(right: 6),
+                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                        decoration: BoxDecoration(color: const Color(0xFF8B5CF6), borderRadius: BorderRadius.circular(3)),
+                                        child: const Text('STALKER', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
+                                      ),
                                     if (isXtream)
                                       Container(
                                         margin: const EdgeInsets.only(right: 6),
@@ -327,11 +451,20 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                                   ],
                                 ),
                                 const SizedBox(height: 4),
-                                Text(s['server'] ?? '', style: TextStyle(color: isXtream ? const Color(0xFF38BDF8) : Colors.white54, fontSize: isTv ? 13 : 11)),
+                                Text(
+                                  s['server'] ?? '',
+                                  style: TextStyle(
+                                    color: isStalker
+                                        ? const Color(0xFFA78BFA)
+                                        : (isXtream ? const Color(0xFF38BDF8) : Colors.white54),
+                                    fontSize: isTv ? 13 : 11,
+                                    fontWeight: (isStalker || isXtream) ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                          Icon(Icons.play_circle_fill, color: const Color(0xFF0072D2), size: isTv ? 32 : 26),
+                          Icon(Icons.play_circle_fill, color: isStalker ? const Color(0xFF8B5CF6) : const Color(0xFF0072D2), size: isTv ? 32 : 26),
                         ],
                       ),
                     ),
