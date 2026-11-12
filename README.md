@@ -79,5 +79,31 @@ git clone https://github.com/Rahul6051276/primefilx-.git
 cd primefilx-/mobile_version
 flutter clean
 flutter pub get
-flutter build apk --release
+flutter build apk --releas
+
+# Primeflix - Streaming App
+
+## GitHub Gist Server Configuration (`TMDB API`)
+
+Primeflix app mein servers (Stremio Addons aur Xtream IPTV) load karne ke liye GitHub Gist (`5b0a18b2cf69a99d1d3e06629fcbc70a`) ki `TMDB API` file mein niche diya gaya JSON structure hi use karna hai.
+
+### Exact JSON Format (Copy & Paste)
+
+```json
+{
+  "active_providers": [
+    {
+      "name": "PenguPlay (VegaMovies & VidLink)",
+      "type": "stremio",
+      "url": "[https://pengu.uk/%7B%22auth_token%22%3A%222UJkzYcs1DAE-kESrDyxt9r87LQZRf7NhRGi6lEC4Oc%22%7D/manifest.json](https://pengu.uk/%7B%22auth_token%22%3A%222UJkzYcs1DAE-kESrDyxt9r87LQZRf7NhRGi6lEC4Oc%22%7D/manifest.json)"
+    },
+    {
+      "name": "Livebox Pro",
+      "type": "xtream",
+      "xc_host": "[http://livebox.pro](http://livebox.pro)",
+      "xc_username": "YOUR_USERNAME",
+      "xc_password": "YOUR_PASSWORD"
+    }
+  ]
+}
 
