@@ -71,6 +71,10 @@ jobs:
             sed -i 's/<application/<application android:usesCleartextTraffic="true"/' "$MANIFEST"
           fi
 
+          if ! grep -q 'android:name="flutterEmbedding"' "$MANIFEST"; then
+            awk '/<\/application>/{print "        <meta-data android:name=\"flutterEmbedding\" android:value=\"2\" />"}1' "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+          fi
+
           if ! grep -q "Media3PlayerActivity" "$MANIFEST"; then
             awk '/<\/application>/{print "        <activity android:name=\".media3.Media3PlayerActivity\" android:exported=\"false\" android:configChanges=\"orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode\" android:screenOrientation=\"sensorLandscape\" android:hardwareAccelerated=\"true\" android:theme=\"@android:style/Theme.Black.NoTitleBar.Fullscreen\" />"}1' "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
           fi
