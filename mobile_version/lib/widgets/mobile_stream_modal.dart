@@ -64,8 +64,9 @@ class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
     try {
       final p = await SharedPreferences.getInstance();
       await p.reload();
-      var c = jsonDecode(p.getString('continue_watching_mobile') ?? '[]');
-      if (c is List) {
+      final decoded = jsonDecode(p.getString('continue_watching_mobile') ?? '[]');
+      if (decoded is List) {
+        var c = List<dynamic>.from(decoded);
         c.removeWhere((e) => e['tmdb_id'].toString() == widget.item['tmdb_id'].toString());
         c.insert(0, {
           'tmdb_id': widget.item['tmdb_id'],
@@ -86,7 +87,7 @@ class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
 
   String _resolveGistUrl() {
     if (AppConfig.gistUrl.trim().isNotEmpty) return AppConfig.gistUrl.trim();
-    for (var prov in widget.providers) {
+    for (final prov in widget.providers) {
       if (prov is Map && prov['gist_url'] != null && prov['gist_url'].toString().trim().isNotEmpty) {
         return prov['gist_url'].toString().trim();
       }
@@ -156,6 +157,12 @@ class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
           builder: (_) => InternalPlayerScreen(
             videoUrl: resolvedUrl,
             title: displayTitle,
+            tmdbId: tmdbId,
+            tmdbKey: AppConfig.tmdbKey,
+            gistUrl: gistUrl,
+            isTv: isTv,
+            season: sNum,
+            episode: eNum,
           ),
         ),
       );
@@ -283,6 +290,7 @@ class MobileQualitySelectorSheet extends StatefulWidget {
   final int? season, episode;
   final List<dynamic> providers;
   final VoidCallback onPlaySaved;
+
   const MobileQualitySelectorSheet({
     super.key,
     required this.item,
@@ -300,6 +308,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
   List<dynamic> streams = [];
   bool loading = true;
   String currentStatus = 'Finding best streaming servers...';
+
   static final Map<String, List<dynamic>> _vodCache = {};
   static final Map<String, List<dynamic>> _seriesCache = {};
   static final Map<String, String> _imdbIdCache = {};
@@ -359,15 +368,15 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
   }
 
   Future<List>> _searchStremioStreams() async {
-    List> res = [];
+    final List> out = [];
     final tmdbId = widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
-    if (tmdbId == null || tmdbId.isEmpty) return res;
+    if (tmdbId == null || tmdbId.isEmpty) return out;
 
     final bool isTv = widget.season != null || widget.item['isTv'] == true;
     final imdbId = await _getImdbId(tmdbId, isTv);
-    if (imdbId == null) return res;
+    if (imdbId == null) return out;
 
-    for (var p in widget.providers) {
+    for (final p in widget.providers) {
       if (p is! Map) continue;
       final bool isStremio = p['type'] == 'stremio' || (p['url']?.toString().contains('manifest.json') == true);
       if (!isStremio) continue;
@@ -386,16 +395,19 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
             ? '$baseUrl/stream/series/$imdbId:${widget.season ?? 1}:${widget.episode ?? 1}.json'
             : '$baseUrl/stream/movie/$imdbId.json';
 
-        final r = await http.get(Uri.parse(streamPath), headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': '*/*',
-        }).timeout(const Duration(seconds: 12));
+        final r = await http.get(
+          Uri.parse(streamPath),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+          },
+        ).timeout(const Duration(seconds: 12));
 
         if (r.statusCode == 200) {
           final data = jsonDecode(r.body);
           final streamList = data['streams'] as List? ?? [];
 
-          for (var s in streamList) {
+          for (final s in streamList) {
             final String? directUrl = s['url']?.toString();
             if (directUrl == null || directUrl.isEmpty || !directUrl.startsWith('http')) continue;
 
@@ -404,7 +416,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
             final String displayTitle = rawTitle.split('\n').first.trim();
             final bool isHindi = _isHindiAudioStream(rawTitle) || sourceName.toLowerCase().contains('hindi');
 
-            res.add({
+            out.add({
               'title': displayTitle,
               'server': '$sName ($sourceName)',
               'url': directUrl,
@@ -415,18 +427,18 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
         }
       } catch (_) {}
     }
-    return res;
+    return out;
   }
 
   Future<List>> _searchXtreamStreams() async {
-    List> res = [];
+    final List> out = [];
     final title = widget.item['title'] ?? widget.item['name'] ?? '';
     final tmdbId = widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
     final year = widget.item['year']?.toString();
     final q = _clean(title);
     final bool isTv = widget.season != null || widget.item['isTv'] == true;
 
-    for (var p in widget.providers) {
+    for (final p in widget.providers) {
       if (p is! Map) continue;
       if (p['type'] != 'xtream' && p['xc_host'] == null) continue;
       final host = (p['xc_host'] ?? p['server'] ?? p['url'])?.toString().replaceAll(RegExp(r'/+$'), '');
@@ -439,7 +451,9 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
         if (!isTv) {
           List<dynamic>? vodList = _vodCache[host];
           if (vodList == null) {
-            final uri = Uri.parse('$host/player_api.php').replace(queryParameters: {'username': user, 'password': pass, 'action': 'get_vod_streams'});
+            final uri = Uri.parse('$host/player_api.php').replace(
+              queryParameters: {'username': user, 'password': pass, 'action': 'get_vod_streams'},
+            );
             final r = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 20));
             if (r.statusCode == 200 && jsonDecode(r.body) is List) {
               vodList = jsonDecode(r.body);
@@ -447,8 +461,8 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
             }
           }
           if (vodList != null && vodList.isNotEmpty) {
-            List<dynamic> allM = [];
-            for (var v in vodList) {
+            final List<dynamic> allM = [];
+            for (final v in vodList) {
               final vN = v['name']?.toString() ?? '';
               if (tmdbId != null && v['tmdb_id']?.toString() == tmdbId) {
                 allM.add(v);
@@ -462,9 +476,9 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                 final bH = _isHindiAudioStream(b['name']?.toString() ?? '');
                 return (aH && !bH) ? -1 : ((!aH && bH) ? 1 : 0);
               });
-              for (var m in allM.take(2)) {
+              for (final m in allM.take(2)) {
                 final realN = m['name']?.toString() ?? title;
-                res.add({
+                out.add({
                   'title': realN,
                   'server': sName,
                   'url': '$host/movie/$user/$pass/${m['stream_id']}.${m['container_extension'] ?? 'mp4'}',
@@ -475,10 +489,13 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
             }
           }
         } else {
-          final sNum = widget.season ?? 1, epNum = widget.episode ?? 1;
+          final sNum = widget.season ?? 1;
+          final epNum = widget.episode ?? 1;
           List<dynamic>? sList = _seriesCache[host];
           if (sList == null) {
-            final uri = Uri.parse('$host/player_api.php').replace(queryParameters: {'username': user, 'password': pass, 'action': 'get_series'});
+            final uri = Uri.parse('$host/player_api.php').replace(
+              queryParameters: {'username': user, 'password': pass, 'action': 'get_series'},
+            );
             final r = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 20));
             if (r.statusCode == 200 && jsonDecode(r.body) is List) {
               sList = jsonDecode(r.body);
@@ -486,17 +503,30 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
             }
           }
           if (sList != null && sList.isNotEmpty) {
-            final target = sList.firstWhere((s) => _clean(s['name']?.toString() ?? '').contains(q), orElse: () => null);
+            final target = sList.firstWhere(
+              (s) => _clean(s['name']?.toString() ?? '').contains(q),
+              orElse: () => null,
+            );
             if (target != null) {
-              final infoUri = Uri.parse('$host/player_api.php').replace(queryParameters: {'username': user, 'password': pass, 'action': 'get_series_info', 'series_id': target['series_id'].toString()});
+              final infoUri = Uri.parse('$host/player_api.php').replace(
+                queryParameters: {
+                  'username': user,
+                  'password': pass,
+                  'action': 'get_series_info',
+                  'series_id': target['series_id'].toString(),
+                },
+              );
               final iR = await http.get(infoUri, headers: _iptvHeaders).timeout(const Duration(seconds: 15));
               if (iR.statusCode == 200) {
                 final eps = jsonDecode(iR.body)['episodes'];
                 if (eps is Map && eps[sNum.toString()] != null) {
-                  final ep = (eps[sNum.toString()] as List).firstWhere((e) => e['episode_num'].toString() == epNum.toString(), orElse: () => null);
+                  final ep = (eps[sNum.toString()] as List).firstWhere(
+                    (e) => e['episode_num'].toString() == epNum.toString(),
+                    orElse: () => null,
+                  );
                   if (ep != null) {
                     final isH = _isHindiAudioStream(target['name']?.toString() ?? '') || sName.toLowerCase().contains('hindi');
-                    res.add({
+                    out.add({
                       'title': '${target['name']} - S$sNum E$epNum',
                       'server': sName,
                       'url': '$host/series/$user/$pass/${ep['id']}.${ep['container_extension'] ?? 'mp4'}',
@@ -511,7 +541,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
         }
       } catch (_) {}
     }
-    return res;
+    return out;
   }
 
   Future<void> _fetchEverythingInParallel() async {
@@ -519,7 +549,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     if (itemData['id'] == null && itemData['tmdb_id'] != null) itemData['id'] = itemData['tmdb_id'];
     if (itemData['tmdb_id'] == null && itemData['id'] != null) itemData['tmdb_id'] = itemData['id'];
 
-    List<dynamic> activeList = List.from(widget.providers);
+    final List<dynamic> activeList = List.from(widget.providers);
     List<dynamic> xtreamStreams = [];
     List<dynamic> stremioStreams = [];
     List<dynamic> cloudStreams = [];
@@ -572,8 +602,9 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     try {
       final p = await SharedPreferences.getInstance();
       await p.reload();
-      var c = jsonDecode(p.getString('continue_watching_mobile') ?? '[]');
-      if (c is List) {
+      final decoded = jsonDecode(p.getString('continue_watching_mobile') ?? '[]');
+      if (decoded is List) {
+        var c = List<dynamic>.from(decoded);
         c.removeWhere((item) => item['tmdb_id'].toString() == widget.item['tmdb_id'].toString());
         c.insert(0, {
           'tmdb_id': widget.item['tmdb_id'],
