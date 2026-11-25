@@ -80,8 +80,19 @@ jobs:
           fi
 
           GRADLE_FILE="mobile_build_temp/android/app/build.gradle"
-          if [ -f "$GRADLE_FILE" ] && ! grep -q "media3-exoplayer" "$GRADLE_FILE"; then
-            printf '\ndependencies {\n    def media3_version = "1.4.1"\n    implementation "androidx.appcompat:appcompat:1.7.0"\n    implementation "androidx.media3:media3-exoplayer:$media3_version"\n    implementation "androidx.media3:media3-exoplayer-hls:$media3_version"\n    implementation "androidx.media3:media3-exoplayer-dash:$media3_version"\n    implementation "androidx.media3:media3-ui:$media3_version"\n    implementation "androidx.media3:media3-common:$media3_version"\n}\n' >> "$GRADLE_FILE"
+          if [ -f "$GRADLE_FILE" ]; then
+            sed -i 's/compileSdkVersion flutter\.compileSdkVersion/compileSdkVersion 34/' "$GRADLE_FILE"
+            sed -i 's/compileSdk = flutter\.compileSdkVersion/compileSdk = 34/' "$GRADLE_FILE"
+            sed -i 's/compileSdkVersion [0-9]\+/compileSdkVersion 34/' "$GRADLE_FILE"
+            sed -i 's/compileSdk [0-9]\+/compileSdk 34/' "$GRADLE_FILE"
+            sed -i 's/targetSdkVersion flutter\.targetSdkVersion/targetSdkVersion 34/' "$GRADLE_FILE"
+            sed -i 's/targetSdk = flutter\.targetSdkVersion/targetSdk = 34/' "$GRADLE_FILE"
+            sed -i 's/targetSdkVersion [0-9]\+/targetSdkVersion 34/' "$GRADLE_FILE"
+            sed -i 's/targetSdk [0-9]\+/targetSdk 34/' "$GRADLE_FILE"
+
+            if ! grep -q "media3-exoplayer" "$GRADLE_FILE"; then
+              printf '\ndependencies {\n    def media3_version = "1.4.1"\n    implementation "androidx.appcompat:appcompat:1.7.0"\n    implementation "androidx.media3:media3-exoplayer:$media3_version"\n    implementation "androidx.media3:media3-exoplayer-hls:$media3_version"\n    implementation "androidx.media3:media3-exoplayer-dash:$media3_version"\n    implementation "androidx.media3:media3-ui:$media3_version"\n    implementation "androidx.media3:media3-common:$media3_version"\n}\n' >> "$GRADLE_FILE"
+            fi
           fi
 
           PROPS="mobile_build_temp/android/gradle/wrapper/gradle-wrapper.properties"
