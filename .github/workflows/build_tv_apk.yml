@@ -96,6 +96,10 @@ jobs:
             sed -i 's/targetSdkVersion [0-9]\+/targetSdkVersion 34/' "$GRADLE_FILE"
             sed -i 's/targetSdk [0-9]\+/targetSdk 34/' "$GRADLE_FILE"
 
+            if ! grep -q "exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'" "$GRADLE_FILE"; then
+              printf '\nconfigurations.all {\n    exclude group: '\''org.jetbrains.kotlin'\'', module: '\''kotlin-stdlib-jdk7'\''\n    exclude group: '\''org.jetbrains.kotlin'\'', module: '\''kotlin-stdlib-jdk8'\''\n    resolutionStrategy {\n        force "org.jetbrains.kotlin:kotlin-stdlib:1.8.22"\n    }\n}\n' >> "$GRADLE_FILE"
+            fi
+
             if ! grep -q "media3-exoplayer" "$GRADLE_FILE"; then
               printf '\ndependencies {\n    def media3_version = "1.4.1"\n    implementation "androidx.appcompat:appcompat:1.7.0"\n    implementation "androidx.media3:media3-exoplayer:$media3_version"\n    implementation "androidx.media3:media3-exoplayer-hls:$media3_version"\n    implementation "androidx.media3:media3-exoplayer-dash:$media3_version"\n    implementation "androidx.media3:media3-ui:$media3_version"\n    implementation "androidx.media3:media3-common:$media3_version"\n}\n' >> "$GRADLE_FILE"
             fi
