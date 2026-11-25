@@ -77,29 +77,12 @@ jobs:
 
           GRADLE_FILE="mobile_build_temp/android/app/build.gradle"
           if [ -f "$GRADLE_FILE" ] && ! grep -q "media3-exoplayer" "$GRADLE_FILE"; then
-            cat << 'EOF' >> "$GRADLE_FILE"
-
-dependencies {
-    def media3_version = "1.4.1"
-    implementation "androidx.appcompat:appcompat:1.7.0"
-    implementation "androidx.media3:media3-exoplayer:$media3_version"
-    implementation "androidx.media3:media3-exoplayer-hls:$media3_version"
-    implementation "androidx.media3:media3-exoplayer-dash:$media3_version"
-    implementation "androidx.media3:media3-ui:$media3_version"
-    implementation "androidx.media3:media3-common:$media3_version"
-}
-EOF
+            printf '\ndependencies {\n    def media3_version = "1.4.1"\n    implementation "androidx.appcompat:appcompat:1.7.0"\n    implementation "androidx.media3:media3-exoplayer:$media3_version"\n    implementation "androidx.media3:media3-exoplayer-hls:$media3_version"\n    implementation "androidx.media3:media3-exoplayer-dash:$media3_version"\n    implementation "androidx.media3:media3-ui:$media3_version"\n    implementation "androidx.media3:media3-common:$media3_version"\n}\n' >> "$GRADLE_FILE"
           fi
 
           PROPS="mobile_build_temp/android/gradle/wrapper/gradle-wrapper.properties"
           if [ -f "$PROPS" ]; then
-            cat << 'EOF' > "$PROPS"
-distributionBase=GRADLE_USER_HOME
-distributionPath=wrapper/dists
-distributionUrl=https\://services.gradle.org/distributions/gradle-8.0-bin.zip
-zipStoreBase=GRADLE_USER_HOME
-zipStorePath=wrapper/dists
-EOF
+            printf 'distributionBase=GRADLE_USER_HOME\ndistributionPath=wrapper/dists\ndistributionUrl=https\\://services.gradle.org/distributions/gradle-8.0-bin.zip\nzipStoreBase=GRADLE_USER_HOME\nzipStorePath=wrapper/dists\n' > "$PROPS"
           fi
 
           cd mobile_build_temp
