@@ -16,7 +16,12 @@ class _TvModalFocusable extends StatefulWidget {
   final VoidCallback onTap;
   final BorderRadius? borderRadius;
   final Color focusColor;
-  const _TvModalFocusable({required this.child, required this.onTap, this.borderRadius, this.focusColor = const Color(0xFF0072D2)});
+  const _TvModalFocusable({
+    required this.child,
+    required this.onTap,
+    this.borderRadius,
+    this.focusColor = const Color(0xFF0072D2),
+  });
   @override
   State<_TvModalFocusable> createState() => _TvModalFocusableState();
 }
@@ -29,7 +34,10 @@ class _TvModalFocusableState extends State<_TvModalFocusable> {
       onFocusChange: (f) => setState(() => _isFocused = f),
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
-          if (event.logicalKey == LogicalKeyboardKey.select || event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.space || event.logicalKey == LogicalKeyboardKey.gameButtonA) {
+          if (event.logicalKey == LogicalKeyboardKey.select ||
+              event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.space ||
+              event.logicalKey == LogicalKeyboardKey.gameButtonA) {
             widget.onTap();
             return KeyEventResult.handled;
           }
@@ -43,8 +51,19 @@ class _TvModalFocusableState extends State<_TvModalFocusable> {
           duration: const Duration(milliseconds: 150),
           decoration: BoxDecoration(
             borderRadius: widget.borderRadius ?? BorderRadius.circular(8),
-            border: Border.all(color: _isFocused ? widget.focusColor : Colors.transparent, width: _isFocused ? 2.5 : 0),
-            boxShadow: _isFocused ? [BoxShadow(color: widget.focusColor.withOpacity(0.6), blurRadius: 10, spreadRadius: 1.5)] : null,
+            border: Border.all(
+              color: _isFocused ? widget.focusColor : Colors.transparent,
+              width: _isFocused ? 2.5 : 0,
+            ),
+            boxShadow: _isFocused
+                ? [
+                    BoxShadow(
+                      color: widget.focusColor.withOpacity(0.6),
+                      blurRadius: 10,
+                      spreadRadius: 1.5,
+                    )
+                  ]
+                : null,
           ),
           child: widget.child,
         ),
@@ -58,12 +77,21 @@ class MobileQualitySelectorSheet extends StatefulWidget {
   final int? season, episode;
   final List<dynamic> providers;
   final VoidCallback onPlaySaved;
-  const MobileQualitySelectorSheet({super.key, required this.item, this.season, this.episode, required this.providers, required this.onPlaySaved});
+  const MobileQualitySelectorSheet({
+    super.key,
+    required this.item,
+    this.season,
+    this.episode,
+    required this.providers,
+    required this.onPlaySaved,
+  });
   @override
-  State<MobileQualitySelectorSheet> createState() => _MobileQualitySelectorSheetState();
+  State<MobileQualitySelectorSheet> createState() =>
+      _MobileQualitySelectorSheetState();
 }
 
-class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet> {
+class _MobileQualitySelectorSheetState
+    extends State<MobileQualitySelectorSheet> {
   List<dynamic> streams = [];
   bool loading = true;
   String currentStatus = 'Finding best streaming servers...';
@@ -71,7 +99,10 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
   static final Map<String, List<dynamic>> _seriesCache = {};
   static final Map<String, String> _imdbIdCache = {};
 
-  final Map<String, String> _iptvHeaders = {'User-Agent': 'IPTVSmartersPro/1.0.0 (Linux; Android 12)', 'Accept': '*/*'};
+  final Map<String, String> _iptvHeaders = {
+    'User-Agent': 'IPTVSmartersPro/1.0.0 (Linux; Android 12)',
+    'Accept': '*/*',
+  };
 
   @override
   void initState() {
@@ -81,10 +112,25 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
 
   bool _isHindiAudioStream(String name) {
     final l = name.toLowerCase();
-    return l.contains('hindi') || l.contains('dubbed') || l.contains('dual audio') || l.contains('dual-audio') || l.contains('multi audio') || l.contains('[hin]') || l.contains('(hin)');
+    return l.contains('hindi') ||
+        l.contains('dubbed') ||
+        l.contains('dual audio') ||
+        l.contains('dual-audio') ||
+        l.contains('multi audio') ||
+        l.contains('[hin]') ||
+        l.contains('(hin)');
   }
 
-  String _clean(String t) => t.toLowerCase().replaceAll(RegExp(r'\[.*?\]|\(.*?\)|fhd|1080p|720p|4k|hindi|dubbed|telugu|tamil|eng'), '').replaceAll(RegExp(r'[^a-z0-9]'), '').trim();
+  String _clean(String t) => t
+      .toLowerCase()
+      .replaceAll(
+        RegExp(
+          r'\[.*?\]|\(.*?\)|fhd|1080p|720p|4k|hindi|dubbed|telugu|tamil|eng',
+        ),
+        '',
+      )
+      .replaceAll(RegExp(r'[^a-z0-9]'), '')
+      .trim();
 
   bool _isStrictMatch(String vName, String query, String? year) {
     final cV = _clean(vName);
@@ -98,7 +144,9 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     if (_imdbIdCache.containsKey(tmdbId)) return _imdbIdCache[tmdbId];
     try {
       final ep = isTv ? 'tv' : 'movie';
-      final url = Uri.parse('${AppConfig.tmdbBase}/$ep/$tmdbId/external_ids?api_key=${AppConfig.tmdbKey}');
+      final url = Uri.parse(
+        '${AppConfig.tmdbBase}/$ep/$tmdbId/external_ids?api_key=${AppConfig.tmdbKey}',
+      );
       final res = await http.get(url).timeout(const Duration(seconds: 6));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -114,23 +162,31 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
 
   // 2. UNIVERSAL STREMIO ADDON STREAM FETCHER (PENGUPLAY, MEDIAFUSION, ETC.)
   Future<List>> _searchStremioStreams() async {
-    List> res = [];
-    final tmdbId = widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
-    if (tmdbId == null || tmdbId.isEmpty) return res;
+    final List> results = [];
+    final tmdbId =
+        widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
+    if (tmdbId == null || tmdbId.isEmpty) return results;
 
     final bool isTv = widget.season != null || widget.item['isTv'] == true;
     final imdbId = await _getImdbId(tmdbId, isTv);
-    if (imdbId == null) return res;
+    if (imdbId == null) return results;
 
     for (var p in widget.providers) {
       if (p is! Map) continue;
-      final bool isStremio = p['type'] == 'stremio' || (p['url']?.toString().contains('manifest.json') == true);
+      final bool isStremio = p['type'] == 'stremio' ||
+          (p['url']?.toString().contains('manifest.json') == true);
       if (!isStremio) continue;
 
-      var baseUrl = (p['url'] ?? p['base_url'])?.toString().trim().replaceAll(RegExp(r'/+$'), '') ?? '';
+      var baseUrl = (p['url'] ?? p['base_url'])
+              ?.toString()
+              .trim()
+              .replaceAll(RegExp(r'/+$'), '') ??
+          '';
       baseUrl = baseUrl.replaceFirst('stremio://', 'https://');
       if (baseUrl.endsWith('/manifest.json')) {
-        baseUrl = baseUrl.substring(0, baseUrl.length - 14).replaceAll(RegExp(r'/+$'), '');
+        baseUrl = baseUrl
+            .substring(0, baseUrl.length - 14)
+            .replaceAll(RegExp(r'/+$'), '');
       }
 
       if (baseUrl.isEmpty) continue;
@@ -142,7 +198,8 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
             : '$baseUrl/stream/movie/$imdbId.json';
 
         final r = await http.get(Uri.parse(streamPath), headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': '*/*',
         }).timeout(const Duration(seconds: 12));
 
@@ -152,15 +209,20 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
 
           for (var s in streamList) {
             final String? directUrl = s['url']?.toString();
-            if (directUrl == null || directUrl.isEmpty || !directUrl.startsWith('http')) continue;
+            if (directUrl == null ||
+                directUrl.isEmpty ||
+                !directUrl.startsWith('http')) {
+              continue;
+            }
 
             final String sourceName = s['name']?.toString() ?? sName;
-            final String rawTitle = s['title']?.toString() ?? widget.item['title'] ?? 'Stream';
-            // Clean up multi-line descriptions from Stremio
+            final String rawTitle =
+                s['title']?.toString() ?? widget.item['title'] ?? 'Stream';
             final String displayTitle = rawTitle.split('\n').first.trim();
-            final bool isHindi = _isHindiAudioStream(rawTitle) || sourceName.toLowerCase().contains('hindi');
+            final bool isHindi = _isHindiAudioStream(rawTitle) ||
+                sourceName.toLowerCase().contains('hindi');
 
-            res.add({
+            results.add({
               'title': displayTitle,
               'server': '$sName ($sourceName)',
               'url': directUrl,
@@ -171,14 +233,15 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
         }
       } catch (_) {}
     }
-    return res;
+    return results;
   }
 
   // 3. XTREAM IPTV SEARCH
   Future<List>> _searchXtreamStreams() async {
-    List> res = [];
+    final List> results = [];
     final title = widget.item['title'] ?? widget.item['name'] ?? '';
-    final tmdbId = widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
+    final tmdbId =
+        widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
     final year = widget.item['year']?.toString();
     final q = _clean(title);
     final bool isTv = widget.season != null || widget.item['isTv'] == true;
@@ -186,7 +249,9 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     for (var p in widget.providers) {
       if (p is! Map) continue;
       if (p['type'] != 'xtream' && p['xc_host'] == null) continue;
-      final host = (p['xc_host'] ?? p['server'] ?? p['url'])?.toString().replaceAll(RegExp(r'/+$'), '');
+      final host = (p['xc_host'] ?? p['server'] ?? p['url'])
+          ?.toString()
+          .replaceAll(RegExp(r'/+$'), '');
       final user = (p['xc_username'] ?? p['username'])?.toString();
       final pass = (p['xc_password'] ?? p['password'])?.toString();
       final sName = (p['name'] ?? 'Xtream Server').toString();
@@ -196,16 +261,30 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
         if (!isTv) {
           List<dynamic>? vodList = _vodCache[host];
           if (vodList == null) {
-            final uri = Uri.parse('$host/player_api.php').replace(queryParameters: {'username': user, 'password': pass, 'action': 'get_vod_streams'});
-            final r = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 20));
-            if (r.statusCode == 200 && jsonDecode(r.body) is List) { vodList = jsonDecode(r.body); _vodCache[host] = vodList!; }
+            final uri = Uri.parse('$host/player_api.php').replace(
+              queryParameters: {
+                'username': user,
+                'password': pass,
+                'action': 'get_vod_streams',
+              },
+            );
+            final r = await http
+                .get(uri, headers: _iptvHeaders)
+                .timeout(const Duration(seconds: 20));
+            if (r.statusCode == 200 && jsonDecode(r.body) is List) {
+              vodList = jsonDecode(r.body);
+              _vodCache[host] = vodList!;
+            }
           }
           if (vodList != null && vodList.isNotEmpty) {
             List<dynamic> allM = [];
             for (var v in vodList) {
               final vN = v['name']?.toString() ?? '';
-              if (tmdbId != null && v['tmdb_id']?.toString() == tmdbId) { allM.add(v); }
-              else if (_isStrictMatch(vN, q, year)) { allM.add(v); }
+              if (tmdbId != null && v['tmdb_id']?.toString() == tmdbId) {
+                allM.add(v);
+              } else if (_isStrictMatch(vN, q, year)) {
+                allM.add(v);
+              }
             }
             if (allM.isNotEmpty) {
               allM.sort((a, b) {
@@ -215,7 +294,15 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
               });
               for (var m in allM.take(2)) {
                 final realN = m['name']?.toString() ?? title;
-                res.add({'title': realN, 'server': sName, 'url': '$host/movie/$user/$pass/${m['stream_id']}.${m['container_extension'] ?? 'mp4'}', 'isHindi': _isHindiAudioStream(realN) || sName.toLowerCase().contains('hindi'), 'isXtream': true});
+                results.add({
+                  'title': realN,
+                  'server': sName,
+                  'url':
+                      '$host/movie/$user/$pass/${m['stream_id']}.${m['container_extension'] ?? 'mp4'}',
+                  'isHindi': _isHindiAudioStream(realN) ||
+                      sName.toLowerCase().contains('hindi'),
+                  'isXtream': true,
+                });
               }
             }
           }
@@ -223,22 +310,57 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
           final sNum = widget.season ?? 1, epNum = widget.episode ?? 1;
           List<dynamic>? sList = _seriesCache[host];
           if (sList == null) {
-            final uri = Uri.parse('$host/player_api.php').replace(queryParameters: {'username': user, 'password': pass, 'action': 'get_series'});
-            final r = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 20));
-            if (r.statusCode == 200 && jsonDecode(r.body) is List) { sList = jsonDecode(r.body); _seriesCache[host] = sList!; }
+            final uri = Uri.parse('$host/player_api.php').replace(
+              queryParameters: {
+                'username': user,
+                'password': pass,
+                'action': 'get_series',
+              },
+            );
+            final r = await http
+                .get(uri, headers: _iptvHeaders)
+                .timeout(const Duration(seconds: 20));
+            if (r.statusCode == 200 && jsonDecode(r.body) is List) {
+              sList = jsonDecode(r.body);
+              _seriesCache[host] = sList!;
+            }
           }
           if (sList != null && sList.isNotEmpty) {
-            final target = sList.firstWhere((s) => _clean(s['name']?.toString() ?? '').contains(q), orElse: () => null);
+            final target = sList.firstWhere(
+              (s) => _clean(s['name']?.toString() ?? '').contains(q),
+              orElse: () => null,
+            );
             if (target != null) {
-              final infoUri = Uri.parse('$host/player_api.php').replace(queryParameters: {'username': user, 'password': pass, 'action': 'get_series_info', 'series_id': target['series_id'].toString()});
-              final iR = await http.get(infoUri, headers: _iptvHeaders).timeout(const Duration(seconds: 15));
+              final infoUri = Uri.parse('$host/player_api.php').replace(
+                queryParameters: {
+                  'username': user,
+                  'password': pass,
+                  'action': 'get_series_info',
+                  'series_id': target['series_id'].toString(),
+                },
+              );
+              final iR = await http
+                  .get(infoUri, headers: _iptvHeaders)
+                  .timeout(const Duration(seconds: 15));
               if (iR.statusCode == 200) {
                 final eps = jsonDecode(iR.body)['episodes'];
                 if (eps is Map && eps[sNum.toString()] != null) {
-                  final ep = (eps[sNum.toString()] as List).firstWhere((e) => e['episode_num'].toString() == epNum.toString(), orElse: () => null);
+                  final ep = (eps[sNum.toString()] as List).firstWhere(
+                    (e) => e['episode_num'].toString() == epNum.toString(),
+                    orElse: () => null,
+                  );
                   if (ep != null) {
-                    final isH = _isHindiAudioStream(target['name']?.toString() ?? '') || sName.toLowerCase().contains('hindi');
-                    res.add({'title': '${target['name']} - S$sNum E$epNum', 'server': sName, 'url': '$host/series/$user/$pass/${ep['id']}.${ep['container_extension'] ?? 'mp4'}', 'isHindi': isH, 'isXtream': true});
+                    final isH =
+                        _isHindiAudioStream(target['name']?.toString() ?? '') ||
+                            sName.toLowerCase().contains('hindi');
+                    results.add({
+                      'title': '${target['name']} - S$sNum E$epNum',
+                      'server': sName,
+                      'url':
+                          '$host/series/$user/$pass/${ep['id']}.${ep['container_extension'] ?? 'mp4'}',
+                      'isHindi': isH,
+                      'isXtream': true,
+                    });
                   }
                 }
               }
@@ -247,46 +369,66 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
         }
       } catch (_) {}
     }
-    return res;
+    return results;
   }
 
   // 4. PARALLEL MULTI-ENGINE EXECUTION (XTREAM + STREMIO + CLOUD ALL SIMULTANEOUSLY)
   Future<void> _fetchEverythingInParallel() async {
     final itemData = Map<String, dynamic>.from(widget.item);
-    if (itemData['id'] == null && itemData['tmdb_id'] != null) itemData['id'] = itemData['tmdb_id'];
-    if (itemData['tmdb_id'] == null && itemData['id'] != null) itemData['tmdb_id'] = itemData['id'];
+    if (itemData['id'] == null && itemData['tmdb_id'] != null) {
+      itemData['id'] = itemData['tmdb_id'];
+    }
+    if (itemData['tmdb_id'] == null && itemData['id'] != null) {
+      itemData['tmdb_id'] = itemData['id'];
+    }
 
     List<dynamic> activeList = List.from(widget.providers);
     List<dynamic> xtreamStreams = [];
     List<dynamic> stremioStreams = [];
     List<dynamic> cloudStreams = [];
 
-    // TASK 1: Xtream IPTV
-    final xtreamTask = _searchXtreamStreams().then((r) {
-      if (r.isNotEmpty && mounted) {
-        xtreamStreams = r;
-        setState(() { streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams]; loading = false; });
+    final xtreamTask = _searchXtreamStreams().then((list) {
+      if (list.isNotEmpty && mounted) {
+        xtreamStreams = list;
+        setState(() {
+          streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams];
+          loading = false;
+        });
       }
     }).catchError((_) {});
 
-    // TASK 2: Stremio Addon Engine (PenguPlay, VegaMovies, VidLink)
-    final stremioTask = _searchStremioStreams().then((r) {
-      if (r.isNotEmpty && mounted) {
-        stremioStreams = r;
-        setState(() { streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams]; loading = false; });
+    final stremioTask = _searchStremioStreams().then((list) {
+      if (list.isNotEmpty && mounted) {
+        stremioStreams = list;
+        setState(() {
+          streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams];
+          loading = false;
+        });
       }
     }).catchError((_) {});
 
-    // TASK 3: Cloud / Backup (If exists)
-    final cloudTask = MobileStreamService.getDirectStreams(item: itemData, providers: activeList, season: widget.season, episode: widget.episode).then((r) {
-      if (r is List && r.isNotEmpty && mounted) {
-        cloudStreams = r;
-        setState(() { streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams]; loading = false; });
+    final cloudTask = MobileStreamService.getDirectStreams(
+      item: itemData,
+      providers: activeList,
+      season: widget.season,
+      episode: widget.episode,
+    ).then((list) {
+      if (list is List && list.isNotEmpty && mounted) {
+        cloudStreams = list;
+        setState(() {
+          streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams];
+          loading = false;
+        });
       }
     }).catchError((_) {});
 
     await Future.wait([xtreamTask, stremioTask, cloudTask]);
-    if (mounted) setState(() { streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams]; loading = false; });
+    if (mounted) {
+      setState(() {
+        streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams];
+        loading = false;
+      });
+    }
   }
 
   Future<void> _saveContinueWatching() async {
@@ -295,8 +437,18 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
       await p.reload();
       var c = jsonDecode(p.getString('continue_watching_mobile') ?? '[]');
       if (c is List) {
-        c.removeWhere((item) => item['tmdb_id'].toString() == widget.item['tmdb_id'].toString());
-        c.insert(0, {'tmdb_id': widget.item['tmdb_id'], 'title': widget.item['title'] ?? 'Untitled', 'poster': widget.item['poster'] ?? '', 'backdrop': widget.item['backdrop'] ?? '', 'year': widget.item['year'] ?? '', 'rating': widget.item['rating'] ?? '8.0', 'isTv': widget.item['isTv'] ?? false});
+        c.removeWhere(
+          (item) => item['tmdb_id'].toString() == widget.item['tmdb_id'].toString(),
+        );
+        c.insert(0, {
+          'tmdb_id': widget.item['tmdb_id'],
+          'title': widget.item['title'] ?? 'Untitled',
+          'poster': widget.item['poster'] ?? '',
+          'backdrop': widget.item['backdrop'] ?? '',
+          'year': widget.item['year'] ?? '',
+          'rating': widget.item['rating'] ?? '8.0',
+          'isTv': widget.item['isTv'] ?? false,
+        });
         if (c.length > 15) c = c.sublist(0, 15);
         await p.setString('continue_watching_mobile', jsonEncode(c));
         widget.onPlaySaved();
@@ -310,28 +462,78 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E2029),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-        content: const Text('Kisme play karna chahte hain?', style: TextStyle(color: Colors.white70, fontSize: 13)),
+        title: Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: const Text(
+          'Kisme play karna chahte hain?',
+          style: TextStyle(color: Colors.white70, fontSize: 13),
+        ),
         actionsAlignment: MainAxisAlignment.spaceEvenly,
         actions: [
           _TvModalFocusable(
-            onTap: () { Navigator.pop(ctx); _playStream(url, false); },
+            onTap: () {
+              Navigator.pop(ctx);
+              _playStream(url, false);
+            },
             borderRadius: BorderRadius.circular(10),
             focusColor: const Color(0xFFE50914),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(color: const Color(0xFFE50914), borderRadius: BorderRadius.circular(10)),
-              child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.play_circle_fill, color: Colors.white, size: 20), SizedBox(width: 8), Text('In-App Player', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))]),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE50914),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.play_circle_fill, color: Colors.white, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'In-App Player',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           _TvModalFocusable(
-            onTap: () { Navigator.pop(ctx); _playStream(url, true); },
+            onTap: () {
+              Navigator.pop(ctx);
+              _playStream(url, true);
+            },
             borderRadius: BorderRadius.circular(10),
             focusColor: Colors.amber,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(color: Colors.amber[800], borderRadius: BorderRadius.circular(10)),
-              child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.open_in_new, color: Colors.white, size: 20), SizedBox(width: 8), Text('VLC / MX Player', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))]),
+              decoration: BoxDecoration(
+                color: Colors.amber[800],
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.open_in_new, color: Colors.white, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'VLC / MX Player',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -350,10 +552,21 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
 
     if (isVlc) {
       try {
-        final intent = AndroidIntent(action: 'action_view', data: cleanUrl, type: 'video/*', flags: const [Flag.FLAG_ACTIVITY_NEW_TASK]);
+        final intent = AndroidIntent(
+          action: 'action_view',
+          data: cleanUrl,
+          type: 'video/*',
+          flags: const [Flag.FLAG_ACTIVITY_NEW_TASK],
+        );
         await intent.launch();
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('VLC ya External Player install nahi hai!')));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('VLC ya External Player install nahi hai!'),
+            ),
+          );
+        }
       }
     } else {
       final launchedNative = await NativeMedia3Player.play(
@@ -387,12 +600,44 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.season != null ? '${widget.item['title']} - S${widget.season} E${widget.episode}' : widget.item['title'] ?? 'Select Server', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white, fontSize: isTv ? 20 : 16, fontWeight: FontWeight.bold)),
+          Text(
+            widget.season != null
+                ? '${widget.item['title']} - S${widget.season} E${widget.episode}'
+                : widget.item['title'] ?? 'Select Server',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: isTv ? 20 : 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(height: 12),
           if (loading && streams.isEmpty)
-            Expanded(child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const CircularProgressIndicator(color: Color(0xFF0072D2)), const SizedBox(height: 12), Text(currentStatus, style: const TextStyle(color: Colors.white70, fontSize: 12))])))
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: Color(0xFF0072D2)),
+                    const SizedBox(height: 12),
+                    Text(
+                      currentStatus,
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            )
           else if (streams.isEmpty)
-            const Expanded(child: Center(child: Text('No active streams found on servers.', style: TextStyle(color: Colors.white54))))
+            const Expanded(
+              child: Center(
+                child: Text(
+                  'No active streams found on servers.',
+                  style: TextStyle(color: Colors.white54),
+                ),
+              ),
+            )
           else
             Expanded(
               child: ListView.separated(
@@ -407,7 +652,9 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
 
                   return _TvModalFocusable(
                     onTap: () => _showPlayerChoiceDialog(s['url'], streamTitle),
-                    focusColor: isStremio ? const Color(0xFF8B5CF6) : const Color(0xFF0072D2),
+                    focusColor: isStremio
+                        ? const Color(0xFF8B5CF6)
+                        : const Color(0xFF0072D2),
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
                       padding: EdgeInsets.all(isTv ? 14 : 10),
@@ -417,7 +664,11 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                         border: Border.all(
                           color: isStremio
                               ? const Color(0xFF8B5CF6)
-                              : (isHindi ? const Color(0xFF10B981) : (isXtream ? const Color(0xFF0072D2) : Colors.white10)),
+                              : (isHindi
+                                  ? const Color(0xFF10B981)
+                                  : (isXtream
+                                      ? const Color(0xFF0072D2)
+                                      : Colors.white10)),
                           width: (isStremio || isHindi || isXtream) ? 1.5 : 1.0,
                         ),
                       ),
@@ -432,33 +683,102 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
                                     if (isStremio)
                                       Container(
                                         margin: const EdgeInsets.only(right: 6),
-                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                        decoration: BoxDecoration(color: const Color(0xFF8B5CF6), borderRadius: BorderRadius.circular(3)),
-                                        child: const Text('STREMIO', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 5,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF8B5CF6),
+                                          borderRadius: BorderRadius.circular(3),
+                                        ),
+                                        child: const Text(
+                                          'STREMIO',
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
                                       ),
                                     if (isXtream)
                                       Container(
                                         margin: const EdgeInsets.only(right: 6),
-                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                        decoration: BoxDecoration(color: const Color(0xFF0072D2), borderRadius: BorderRadius.circular(3)),
-                                        child: const Text('IPTV', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 5,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF0072D2),
+                                          borderRadius: BorderRadius.circular(3),
+                                        ),
+                                        child: const Text(
+                                          'IPTV',
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
                                       ),
                                     if (isHindi)
                                       Container(
                                         margin: const EdgeInsets.only(right: 6),
-                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                        decoration: BoxDecoration(color: const Color(0xFF10B981), borderRadius: BorderRadius.circular(3)),
-                                        child: const Text('HINDI AUDIO', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.black)),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 5,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF10B981),
+                                          borderRadius: BorderRadius.circular(3),
+                                        ),
+                                        child: const Text(
+                                          'HINDI AUDIO',
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.black,
+                                          ),
+                                        ),
                                       ),
-                                    Expanded(child: Text(streamTitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: isTv ? 15 : 13))),
+                                    Expanded(
+                                      child: Text(
+                                        streamTitle,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: isTv ? 15 : 13,
+                                        ),
+                                      ),
+                                    ),
                                   ],
                                 ),
                                 const SizedBox(height: 4),
-                                Text(s['server'] ?? '', style: TextStyle(color: isStremio ? const Color(0xFFA78BFA) : (isXtream ? const Color(0xFF38BDF8) : Colors.white54), fontSize: isTv ? 13 : 11, fontWeight: (isStremio || isXtream) ? FontWeight.bold : FontWeight.normal)),
+                                Text(
+                                  s['server'] ?? '',
+                                  style: TextStyle(
+                                    color: isStremio
+                                        ? const Color(0xFFA78BFA)
+                                        : (isXtream
+                                            ? const Color(0xFF38BDF8)
+                                            : Colors.white54),
+                                    fontSize: isTv ? 13 : 11,
+                                    fontWeight: (isStremio || isXtream)
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                          Icon(Icons.play_circle_fill, color: isStremio ? const Color(0xFF8B5CF6) : const Color(0xFF0072D2), size: isTv ? 32 : 26),
+                          Icon(
+                            Icons.play_circle_fill,
+                            color: isStremio
+                                ? const Color(0xFF8B5CF6)
+                                : const Color(0xFF0072D2),
+                            size: isTv ? 32 : 26,
+                          ),
                         ],
                       ),
                     ),

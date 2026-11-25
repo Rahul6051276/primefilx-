@@ -1,6 +1,9 @@
 name: Build Android APK
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -32,13 +35,65 @@ jobs:
           flutter create --org com.primeflix.app --project-name primeflix_mobile mobile_build_temp
           cp -r mobile_version/lib mobile_build_temp/
           cp mobile_version/pubspec.yaml mobile_build_temp/pubspec.yaml
-          
+
+          # Copy custom AndroidManifest if present
+          if [ -f "mobile_version/android/app/src/main/AndroidManifest.xml" ]; then
+            cp mobile_version/android/app/src/main/AndroidManifest.xml mobile_build_temp/android/app/src/main/AndroidManifest.xml
+          fi
+
+          # Copy Kotlin files (MainActivity + media3) into generated package folder
+          PKG_DIR="mobile_build_temp/android/app/src/main/kotlin/com/primeflix/app/primeflix_mobile"
+          mkdir -p "$PKG_DIR/media3"
+
+          if [ -f "mobile_version/android/app/src/main/kotlin/com/primeflix/app/MainActivity.kt" ]; then
+            cp mobile_version/android/app/src/main/kotlin/com/primeflix/app/MainActivity.kt "$PKG_DIR/MainActivity.kt"
+            sed -i 's/^package com\.primeflix\.app$/package com.primeflix.app.primeflix_mobile/' "$PKG_DIR/MainActivity.kt"
+            sed -i 's/import com\.primeflix\.app\.media3\.Media3Bridge/import com.primeflix.app.primeflix_mobile.media3.Media3Bridge/' "$PKG_DIR/MainActivity.kt"
+          fi
+
+          if [ -f "mobile_version/android/app/src/main/kotlin/com/primeflix/app/media3/Media3Bridge.kt" ]; then
+            cp mobile_version/android/app/src/main/kotlin/com/primeflix/app/media3/Media3Bridge.kt "$PKG_DIR/media3/Media3Bridge.kt"
+            sed -i 's/^package com\.primeflix\.app\.media3$/package com.primeflix.app.primeflix_mobile.media3/' "$PKG_DIR/media3/Media3Bridge.kt"
+          fi
+
+          if [ -f "mobile_version/android/app/src/main/kotlin/com/primeflix/app/media3/Media3PlayerActivity.kt" ]; then
+            cp mobile_version/android/app/src/main/kotlin/com/primeflix/app/media3/Media3PlayerActivity.kt "$PKG_DIR/media3/Media3PlayerActivity.kt"
+            sed -i 's/^package com\.primeflix\.app\.media3$/package com.primeflix.app.primeflix_mobile.media3/' "$PKG_DIR/media3/Media3PlayerActivity.kt"
+          fi
+
+          # Ensure Media3PlayerActivity is declared in AndroidManifest.xml
+          MANIFEST="mobile_build_temp/android/app/src/main/AndroidManifest.xml"
+          if ! grep -q "Media3PlayerActivity" "$MANIFEST"; then
+            sed -i 's/<\/application>/        <activity android:name=".media3.Media3PlayerActivity" android:exported="false" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:screenOrientation="sensorLandscape" android:hardwareAccelerated="true" android:theme="@android:style\/Theme.Black.NoTitleBar.Fullscreen" \/>\n    <\/application>/' "$MANIFEST"
+          fi
+
           # Clean Mobile name
-          sed -i 's/android:label="[^"]*"/android:label="Primeflix"/' mobile_build_temp/android/app/src/main/AndroidManifest.xml
-          
+          sed -i 's/android:label="[^"]*"/android:label="Primeflix"/' "$MANIFEST"
+
           # Internet & Cleartext HTTP fix
-          sed -i '/<application/i <uses-permission android:name="android.permission.INTERNET" />' mobile_build_temp/android/app/src/main/AndroidManifest.xml
-          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' mobile_build_temp/android/app/src/main/AndroidManifest.xml
+          if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
+            sed -i '/<application/i <uses-permission android:name="android.permission.INTERNET" />' "$MANIFEST"
+          fi
+          if ! grep -q "android:usesCleartextTraffic" "$MANIFEST"; then
+            sed -i 's/<application/<application android:usesCleartextTraffic="true"/' "$MANIFEST"
+          fi
+
+          # Add Media3 & AppCompat dependencies to app/build.gradle
+          GRADLE_FILE="mobile_build_temp/android/app/build.gradle"
+          if [ -f "$GRADLE_FILE" ] && ! grep -q "media3-exoplayer" "$GRADLE_FILE"; then
+            cat << 'EOF' >> "$GRADLE_FILE"
+
+dependencies {
+    def media3_version = "1.4.1"
+    implementation "androidx.appcompat:appcompat:1.7.0"
+    implementation "androidx.media3:media3-exoplayer:$media3_version"
+    implementation "androidx.media3:media3-exoplayer-hls:$media3_version"
+    implementation "androidx.media3:media3-exoplayer-dash:$media3_version"
+    implementation "androidx.media3:media3-ui:$media3_version"
+    implementation "androidx.media3:media3-common:$media3_version"
+}
+EOF
+          fi
 
           # FORCE GRADLE WRAPPER TO USE RELIABLE MIRROR (Bypasses 502/504 Timeouts)
           PROPS="mobile_build_temp/android/gradle/wrapper/gradle-wrapper.properties"
@@ -66,9 +121,9 @@ jobs:
           name: Primeflix v1.0.${{ github.run_number }}
           body: |
             ## Primeflix Mobile v1.0.${{ github.run_number }}
+            * Native Android Media3 (ExoPlayer) integration
             * Optimized Home Screen with fast loading & 200+ catalogs
-            * IPTV & Xtream sources strictly filtered out
-            * Direct Cloud Streaming Engine
+            * Direct & IPTV/Stremio Streaming Engine
           files: |
             release_apks/Primeflix-Mobile.apk
         env:
