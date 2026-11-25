@@ -1,455 +1,159 @@
-// ============================================================================
-// INTERNAL VIDEO PLAYER (WAKELOCK SCREEN ON + SMART AUTO-HIDE + TV D-PAD + CROP)
-// ============================================================================
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:video_player/video_player.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 
 class InternalPlayerScreen extends StatefulWidget {
-  final String streamUrl;
+  final String videoUrl;
   final String title;
+  final String tmdbId;
+  final String tmdbKey;
+  final String gistUrl;
+  final bool isTv;
+  final int season;
+  final int episode;
+  final String userAgent;
 
-  InternalPlayerScreen({
+  const InternalPlayerScreen({
     super.key,
-    String? videoUrl,
-    String? streamUrl,
+    required this.videoUrl,
     required this.title,
-  }) : streamUrl = (streamUrl != null && streamUrl.isNotEmpty) ? streamUrl : (videoUrl ?? '');
+    this.tmdbId = '',
+    this.tmdbKey = '',
+    this.gistUrl = '',
+    this.isTv = false,
+    this.season = 1,
+    this.episode = 1,
+    this.userAgent = 'VLC/3.0.18 LibVLC/3.0.18 (Linux; Android 13)',
+  });
 
   @override
   State<InternalPlayerScreen> createState() => _InternalPlayerScreenState();
 }
 
 class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
-  late VideoPlayerController _controller;
-  bool _isInit = false;
-  bool _hasError = false;
-  String _errorMessage = '';
-  bool _showControls = true;
-  bool _isLocked = false;
-  Timer? _controlsTimer;
+  static const MethodChannel _exoChannel = MethodChannel('com.primeflix/media3');
 
-  double _volume = 1.0;
-  double _brightness = 0.5;
-  String _overlayText = '';
-  IconData _overlayIcon = Icons.volume_up_rounded;
-  bool _showOverlayIndicator = false;
-  Timer? _overlayTimer;
-
-  int _scaleMode = 2;
-  final FocusNode _playerFocusNode = FocusNode();
+  bool _isLaunching = true;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    // 1. SCREEN KO SLEEP / LOCK HONE SE ROKEGA (WAKELOCK)
-    WakelockPlus.enable();
-
-    SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    _initPlayer();
+    _launchExoPlayer();
   }
 
-  Future<void> _initPlayer() async {
-    try {
-      _controller = VideoPlayerController.networkUrl(
-        Uri.parse(widget.streamUrl),
-        httpHeaders: const {
-          'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': '*/*',
-          'Connection': 'keep-alive',
-        },
-      );
+  Future<void> _launchExoPlayer() async {
+    final cleanUrl = widget.videoUrl.trim();
+    final cleanTitle = widget.title.trim().isEmpty ? 'Primeflix' : widget.title.trim();
 
-      await _controller.initialize();
-      _controller.setVolume(_volume);
-      _controller.play();
-
+    if (cleanUrl.isEmpty && widget.tmdbId.trim().isEmpty) {
       if (mounted) {
-        setState(() => _isInit = true);
-        _startHideTimer(3);
-        _playerFocusNode.requestFocus();
+        setState(() {
+          _isLaunching = false;
+          _errorMessage = 'ExoPlayer stream URL या TMDB ID उपलब्ध नहीं है।';
+        });
       }
+      return;
+    }
 
-      _controller.addListener(() {
-        if (!mounted) return;
-        // Video start hote hi controls auto-hide timer restart karein
-        if (_controller.value.isPlaying && _showControls && (_controlsTimer == null || !_controlsTimer!.isActive)) {
-          _startHideTimer(3);
-        }
-        setState(() {});
+    setState(() {
+      _isLaunching = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final result = await _exoChannel.invokeMethod<bool>('playMedia', {
+        'url': cleanUrl,
+        'title': cleanTitle,
+        'tmdbId': widget.tmdbId.trim(),
+        'tmdbKey': widget.tmdbKey.trim(),
+        'gistUrl': widget.gistUrl.trim(),
+        'isTv': widget.isTv,
+        'season': widget.season,
+        'episode': widget.episode,
+        'userAgent': widget.userAgent.trim().isEmpty
+            ? 'VLC/3.0.18 LibVLC/3.0.18 (Linux; Android 13)'
+            : widget.userAgent.trim(),
+      });
+
+      if (!mounted) return;
+
+      if (result == true) {
+        Navigator.of(context).pop();
+      } else {
+        setState(() {
+          _isLaunching = false;
+          _errorMessage = 'ExoPlayer activity शुरू नहीं हो सकी।';
+        });
+      }
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLaunching = false;
+        _errorMessage = 'ExoPlayer error: ${e.message ?? e.code}';
       });
     } catch (e) {
-      if (mounted) setState(() { _hasError = true; _errorMessage = e.toString(); });
-    }
-  }
-
-  // SMART AUTO-HIDE TIMER (Controls 3 second me automatically gayab honge)
-  void _startHideTimer([int seconds = 3]) {
-    _controlsTimer?.cancel();
-    _controlsTimer = Timer(Duration(seconds: seconds), () {
-      if (mounted && !_isLocked) {
-        if (_controller.value.isPlaying) {
-          setState(() => _showControls = false);
-        } else {
-          // Buffering ya pause ho to firse check karein
-          _startHideTimer(2);
-        }
-      }
-    });
-  }
-
-  void _toggleControls() {
-    setState(() => _showControls = !_showControls);
-    if (_showControls) {
-      if (_isLocked) {
-        _controlsTimer?.cancel();
-        _controlsTimer = Timer(const Duration(seconds: 3), () {
-          if (mounted && _isLocked) setState(() => _showControls = false);
-        });
-      } else {
-        _startHideTimer(3);
-      }
-    }
-  }
-
-  void _togglePlayPause() {
-    if (!_isInit || _isLocked) return;
-    setState(() {
-      _controller.value.isPlaying ? _controller.pause() : _controller.play();
-      _showControls = true;
-    });
-    if (_controller.value.isPlaying) _startHideTimer(3);
-  }
-
-  void _seekRelative(int seconds) {
-    if (!_isInit || _isLocked) return;
-    final currentPos = _controller.value.position;
-    final totalDur = _controller.value.duration;
-
-    var newPos = currentPos + Duration(seconds: seconds);
-    if (newPos < Duration.zero) newPos = Duration.zero;
-    if (newPos > totalDur) newPos = totalDur;
-
-    _controller.seekTo(newPos);
-
-    setState(() {
-      _overlayText = seconds > 0 ? '+$seconds s' : '$seconds s';
-      _overlayIcon = seconds > 0 ? Icons.forward_30_rounded : Icons.replay_30_rounded;
-      _showOverlayIndicator = true;
-      _showControls = true;
-    });
-
-    _overlayTimer?.cancel();
-    _overlayTimer = Timer(const Duration(milliseconds: 900), () {
-      if (mounted) setState(() => _showOverlayIndicator = false);
-    });
-
-    _startHideTimer(3);
-  }
-
-  void _cycleScaleMode() {
-    if (_isLocked) return;
-    final scaleNames = ['FIT (16:9)', 'FILL (STRETCH)', 'CROP (ZOOM)'];
-    final scaleIcons = [Icons.fit_screen_rounded, Icons.aspect_ratio_rounded, Icons.crop_free_rounded];
-
-    setState(() {
-      _scaleMode = (_scaleMode + 1) % 3;
-      _overlayText = scaleNames[_scaleMode];
-      _overlayIcon = scaleIcons[_scaleMode];
-      _showOverlayIndicator = true;
-      _showControls = true;
-    });
-
-    _overlayTimer?.cancel();
-    _overlayTimer = Timer(const Duration(milliseconds: 1200), () {
-      if (mounted) setState(() => _showOverlayIndicator = false);
-    });
-
-    _startHideTimer(3);
-  }
-
-  void _toggleLock() {
-    setState(() {
-      _isLocked = !_isLocked;
-      if (_isLocked) {
-        _controlsTimer?.cancel();
-        _controlsTimer = Timer(const Duration(seconds: 2), () {
-          if (mounted && _isLocked) setState(() => _showControls = false);
-        });
-      } else {
-        _showControls = true;
-        _startHideTimer(3);
-      }
-    });
-  }
-
-  KeyEventResult _handleTvRemoteKeys(KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    final key = event.logicalKey;
-
-    if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.space ||
-        key == LogicalKeyboardKey.gameButtonA || key == LogicalKeyboardKey.mediaPlayPause ||
-        key == LogicalKeyboardKey.mediaPlay || key == LogicalKeyboardKey.mediaPause) {
-      _togglePlayPause();
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.mediaFastForward || key == LogicalKeyboardKey.mediaTrackNext) {
-      _seekRelative(30);
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.mediaRewind || key == LogicalKeyboardKey.mediaTrackPrevious) {
-      _seekRelative(-30);
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.arrowUp) {
-      _cycleScaleMode();
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.arrowDown) {
-      _toggleControls();
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
-
-  void _onVerticalDragUpdate(DragUpdateDetails details, double screenWidth, double screenHeight) {
-    if (_isLocked) return;
-    final delta = -details.primaryDelta! / (screenHeight * 0.75);
-    if (details.localPosition.dx < screenWidth / 2) {
+      if (!mounted) return;
       setState(() {
-        _brightness = (_brightness + delta).clamp(0.05, 1.0);
-        _overlayText = '${(_brightness * 100).toInt()}%';
-        _overlayIcon = Icons.brightness_6_rounded;
-        _showOverlayIndicator = true;
-      });
-    } else {
-      setState(() {
-        _volume = (_volume + delta).clamp(0.0, 1.0);
-        _controller.setVolume(_volume);
-        _overlayText = '${(_volume * 100).toInt()}%';
-        _overlayIcon = _volume == 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded;
-        _showOverlayIndicator = true;
+        _isLaunching = false;
+        _errorMessage = 'ExoPlayer launch failed: $e';
       });
     }
-    _overlayTimer?.cancel();
-    _overlayTimer = Timer(const Duration(milliseconds: 900), () {
-      if (mounted) setState(() => _showOverlayIndicator = false);
-    });
-  }
-
-  String _formatDuration(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    final h = d.inHours;
-    return h > 0 ? '$h:$m:$s' : '$m:$s';
-  }
-
-  @override
-  void dispose() {
-    // 2. VIDEO SE BAHAR AATE HI NORMAL TIMEOUT WAPAS CHALU
-    WakelockPlus.disable();
-
-    _controlsTimer?.cancel();
-    _overlayTimer?.cancel();
-    _playerFocusNode.dispose();
-    _controller.dispose();
-
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-      DeviceOrientation.portraitUp,
-    ]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    super.dispose();
-  }
-
-  Widget _buildVideoOutput() {
-    if (!_isInit) return const Center(child: CircularProgressIndicator(color: Color(0xFFE50914)));
-
-    if (_scaleMode == 1) {
-      return SizedBox.expand(
-        child: FittedBox(
-          fit: BoxFit.fill,
-          child: SizedBox(width: _controller.value.size.width, height: _controller.value.size.height, child: VideoPlayer(_controller)),
-        ),
-      );
-    } else if (_scaleMode == 2) {
-      return SizedBox.expand(
-        child: ClipRect(
-          child: Transform.scale(
-            scale: 1.34,
-            child: Center(
-              child: AspectRatio(aspectRatio: _controller.value.aspectRatio, child: VideoPlayer(_controller)),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Center(
-      child: AspectRatio(aspectRatio: _controller.value.aspectRatio, child: VideoPlayer(_controller)),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final scaleNames = ['FIT (16:9)', 'FILL (STRETCH)', 'CROP (ZOOM)'];
-    final size = MediaQuery.of(context).size;
-
-    return Focus(
-      focusNode: _playerFocusNode,
-      autofocus: true,
-      onKeyEvent: (node, event) => _handleTvRemoteKeys(event),
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            // 1. Video Layer
-            _buildVideoOutput(),
-
-            // 2. Brightness Black Shading
-            IgnorePointer(child: Container(color: Colors.black.withOpacity((1.0 - _brightness) * 0.8))),
-
-            // 3. Gesture Layer (Mobile Tap & Drag to Hide/Show Controls)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _toggleControls,
-              onVerticalDragUpdate: (details) => _onVerticalDragUpdate(details, size.width, size.height),
-              child: Container(color: Colors.transparent),
-            ),
-
-            // 4. Center Gesture HUD (Volume & Brightness, Forward/Rewind, Crop)
-            if (_showOverlayIndicator)
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF181818).withOpacity(0.92),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE50914), width: 1.5),
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: _isLaunching
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(color: Color(0xFFE50914)),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Opening ExoPlayer...',
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(_overlayIcon, color: const Color(0xFFE50914), size: 30),
-                      const SizedBox(width: 12),
-                      Text(_overlayText, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-              ),
-
-            // 5. Full Player Controls (Tap anywhere on background to toggle)
-            if (_showControls && _isInit && !_isLocked)
-              GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: _toggleControls,
-                child: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                      colors: [Colors.black87, Colors.transparent, Colors.transparent, Colors.black87],
-                      stops: [0.0, 0.22, 0.72, 1.0],
+                ],
+              )
+            : Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _errorMessage ?? 'ExoPlayer open nahi ho paya.',
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      textAlign: TextAlign.center,
                     ),
-                  ),
-                  child: Stack(
-                    children: [
-                      // Top Bar
-                      Positioned(
-                        top: 20, left: 20, right: 20,
-                        child: Row(
-                          children: [
-                            InkWell(
-                              onTap: () => Navigator.pop(context),
-                              child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle, border: Border.all(color: Colors.white24)), child: const Icon(Icons.arrow_back, color: Colors.white, size: 22)),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(child: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
-                            InkWell(
-                              onTap: _cycleScaleMode,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                decoration: BoxDecoration(color: const Color(0xFF181818).withOpacity(0.9), borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFE50914), width: 1.5)),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.aspect_ratio, color: Color(0xFFE50914), size: 18),
-                                    const SizedBox(width: 6),
-                                    Text(scaleNames[_scaleMode], style: const TextStyle(color: Color(0xFFE50914), fontWeight: FontWeight.bold, fontSize: 12)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton(
+                          onPressed: _launchExoPlayer,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFE50914),
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Retry ExoPlayer'),
                         ),
-                      ),
-                      // Center 30s Seek & Play/Pause Buttons
-                      Center(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            InkWell(
-                              onTap: () => _seekRelative(-30),
-                              child: Container(width: 56, height: 56, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black45, border: Border.all(color: Colors.white24, width: 1.5)), child: const Icon(Icons.replay_30, color: Colors.white, size: 34)),
-                            ),
-                            const SizedBox(width: 44),
-                            InkWell(
-                              onTap: _togglePlayPause,
-                              child: Container(width: 68, height: 68, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFFE50914), border: Border.all(color: Colors.white30, width: 2)), child: Icon(_controller.value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 42)),
-                            ),
-                            const SizedBox(width: 44),
-                            InkWell(
-                              onTap: () => _seekRelative(30),
-                              child: Container(width: 56, height: 56, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black45, border: Border.all(color: Colors.white24, width: 1.5)), child: const Icon(Icons.forward_30, color: Colors.white, size: 34)),
-                            ),
-                          ],
+                        const SizedBox(width: 12),
+                        OutlinedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white38),
+                          ),
+                          child: const Text('Back'),
                         ),
-                      ),
-                      // Bottom Progress Bar
-                      Positioned(
-                        bottom: 16, left: 24, right: 24,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            VideoProgressIndicator(_controller, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 8), colors: const VideoProgressColors(playedColor: Color(0xFFE50914), bufferedColor: Colors.white38, backgroundColor: Colors.white12)),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(_formatDuration(_controller.value.position), style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
-                                Text(_formatDuration(_controller.value.duration), style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-
-            // 6. Screen Lock Button
-            if (_showControls && _isInit)
-              Positioned(
-                left: 20, top: size.height / 2 - 25,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _toggleLock,
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: _isLocked ? const Color(0xFFE50914) : Colors.black54, shape: BoxShape.circle, border: Border.all(color: _isLocked ? Colors.white : Colors.white38, width: 1.5)),
-                    child: Icon(_isLocked ? Icons.lock : Icons.lock_open, color: Colors.white, size: 24),
-                  ),
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }
 }
-// END OF FILE

@@ -9,12 +9,13 @@ class CatalogService {
     for (var m in (list ?? [])) {
       if (m['poster_path'] == null && m['backdrop_path'] == null) continue;
       final title = m['title'] ?? m['name'] ?? 'Untitled';
-      
+
       if (isDailySoapTitle(title)) continue;
 
       res.add({
         'tmdb_id': m['id'],
         'title': title,
+        'overview': (m['overview'] ?? '').toString(),
         'year': (m['release_date'] ?? m['first_air_date'] ?? currentYear).toString().split('-')[0],
         'rating': m['vote_average']?.toString() ?? '8.0',
         'backdrop': m['backdrop_path'] != null ? AppConfig.backdropBase + m['backdrop_path'] : AppConfig.imgBase + m['poster_path'],
@@ -26,6 +27,7 @@ class CatalogService {
   }
 
   static Future fetchMassiveCatalogs() async {
+    if (AppConfig.tmdbKey.isEmpty) return {};
     try {
       final responses = await Future.wait([
         http.get(Uri.parse('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_watch_providers=8&watch_region=IN&sort_by=first_air_date.desc&page=1')),

@@ -31,6 +31,9 @@ jobs:
           cache: true
 
       - name: Setup & Build Mobile App
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          GIST_RAW_URL: ${{ secrets.GIST_RAW_URL }}
         run: |
           set -e
           flutter create --org com.primeflix.app --project-name primeflix_mobile mobile_build_temp
@@ -76,7 +79,9 @@ jobs:
           fi
 
           if ! grep -q "Media3PlayerActivity" "$MANIFEST"; then
-            awk '/<\/application>/{print "        <activity android:name=\".media3.Media3PlayerActivity\" android:exported=\"false\" android:configChanges=\"orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode\" android:screenOrientation=\"sensorLandscape\" android:hardwareAccelerated=\"true\" android:theme=\"@android:style/Theme.Black.NoTitleBar.Fullscreen\" />"}1' "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+            awk '/<\/application>/{print "        <activity android:name=\".media3.Media3PlayerActivity\" android:exported=\"false\" android:configChanges=\"orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode\" android:screenOrientation=\"sensorLandscape\" android:hardwareAccelerated=\"true\" android:theme=\"@style/Theme.AppCompat.NoActionBar\" />"}1' "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+          else
+            sed -i 's/@android:style\/Theme\.Black\.NoTitleBar\.Fullscreen/@style\/Theme.AppCompat.NoActionBar/g' "$MANIFEST"
           fi
 
           GRADLE_FILE="mobile_build_temp/android/app/build.gradle"
@@ -112,7 +117,9 @@ jobs:
 
           cd mobile_build_temp
           flutter pub get
-          flutter build apk --release
+          flutter build apk --release \
+            --dart-define=TMDB_API_KEY="$TMDB_API_KEY" \
+            --dart-define=GIST_RAW_URL="$GIST_RAW_URL"
 
       - name: Prepare APK for Release
         run: |
@@ -127,8 +134,8 @@ jobs:
           body: |
             ## Primeflix Mobile v1.0.${{ github.run_number }}
             * Native Android Media3 (ExoPlayer) integration
-            * Optimized Home Screen with fast loading & 200+ catalogs
-            * Direct & IPTV/Stremio Streaming Engine
+            * Direct Watch Now -> ExoPlayer with top Sources drawer
+            * GitHub Secrets configuration (TMDB_API_KEY & GIST_RAW_URL)
           files: |
             release_apks/Primeflix-Mobile.apk
         env:

@@ -5,12 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/tmdb_service.dart';
-import '../services/catalog_service.dart';
 import '../widgets/mobile_stream_modal.dart';
 
-const String kGistPermanentRawUrl = "https://gist.githubusercontent.com/Rahul6051276/5b0a18b2cf69a99d1d3e06629fcbc70a/raw";
-
-// TV REMOTE D-PAD FOCUS & LONG-PRESS WIDGET
 class _TvSearchFocusable extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
@@ -51,7 +47,7 @@ class _TvSearchFocusableState extends State<_TvSearchFocusable> {
       },
       child: InkWell(
         onTap: widget.onTap,
-        onLongPress: widget.onLongPress, // TV Remote Hold & Mobile Long Press Support
+        onLongPress: widget.onLongPress,
         borderRadius: widget.borderRadius ?? BorderRadius.circular(8),
         child: AnimatedScale(
           scale: _isFocused ? 1.05 : 1.0,
@@ -60,8 +56,13 @@ class _TvSearchFocusableState extends State<_TvSearchFocusable> {
             duration: const Duration(milliseconds: 150),
             decoration: BoxDecoration(
               borderRadius: widget.borderRadius ?? BorderRadius.circular(8),
-              border: Border.all(color: _isFocused ? widget.focusColor : Colors.transparent, width: _isFocused ? 2.5 : 0),
-              boxShadow: _isFocused ? [BoxShadow(color: widget.focusColor.withOpacity(0.6), blurRadius: 10, spreadRadius: 2)] : null,
+              border: Border.all(
+                color: _isFocused ? widget.focusColor : Colors.transparent,
+                width: _isFocused ? 2.5 : 0,
+              ),
+              boxShadow: _isFocused
+                  ? [BoxShadow(color: widget.focusColor.withOpacity(0.6), blurRadius: 10, spreadRadius: 2)]
+                  : null,
             ),
             child: widget.child,
           ),
@@ -113,20 +114,25 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _loadProviders() async {
+    final gistEndpoint = AppConfig.gistUrl.trim();
+    if (gistEndpoint.isEmpty) return;
+
     try {
-      final res = await http.get(Uri.parse("$kGistPermanentRawUrl?t=${DateTime.now().millisecondsSinceEpoch}")).timeout(const Duration(seconds: 6));
+      final sep = gistEndpoint.contains('?') ? '&' : '?';
+      final res = await http
+          .get(Uri.parse('$gistEndpoint${sep}t=${DateTime.now().millisecondsSinceEpoch}'))
+          .timeout(const Duration(seconds: 6));
       if (res.statusCode == 200) {
         final d = jsonDecode(res.body);
-        _activeProviders = d['active_providers'] ?? [];
+        if (d is Map) {
+          _activeProviders = d['active_providers'] ?? d['providers'] ?? [];
+        } else if (d is List) {
+          _activeProviders = d;
+        }
       }
     } catch (_) {}
-
-    if (_activeProviders.isEmpty) {
-      _activeProviders = [{'name': 'Render Cloud', 'url': 'https://vidsrc.me'}];
-    }
   }
 
-  // ADD TO MY LIST ON LONG PRESS (MOBILE + TV REMOTE)
   Future<void> _addToMyList(dynamic item) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -175,12 +181,18 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _performSearch(String query) async {
+    final apiKey = AppConfig.tmdbKey.trim();
+    if (apiKey.isEmpty) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+
     setState(() => _isLoading = true);
     final encodedQuery = Uri.encodeComponent(query);
 
     try {
       final url = Uri.parse(
-        '${AppConfig.tmdbBase}/search/multi?api_key=${AppConfig.tmdbKey}&query=$encodedQuery&include_adult=false&page=1',
+        '${AppConfig.tmdbBase}/search/multi?api_key=$apiKey&query=$encodedQuery&include_adult=false&page=1',
       );
 
       final res = await http.get(url).timeout(const Duration(seconds: 8));
@@ -203,6 +215,7 @@ class _SearchScreenState extends State<SearchScreen> {
             parsed.add({
               'tmdb_id': m['id'],
               'title': isTv ? (m['name'] ?? m['original_name'] ?? '') : (m['title'] ?? m['original_title'] ?? ''),
+              'overview': (m['overview'] ?? '').toString(),
               'poster': 'https://image.tmdb.org/t/p/w500$posterPath',
               'backdrop': m['backdrop_path'] != null ? 'https://image.tmdb.org/t/p/w780${m['backdrop_path']}' : '',
               'year': (isTv ? (m['first_air_date'] ?? '') : (m['release_date'] ?? '')).toString().split('-').first,
@@ -230,7 +243,7 @@ class _SearchScreenState extends State<SearchScreen> {
       isScrollControlled: true,
       backgroundColor: const Color(0xFF16181F),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => MobileQualitySelectorSheet(
+      builder: (_) => MobileMovieDetailSheet(
         item: Map<String, dynamic>.from(item),
         providers: _activeProviders,
         onPlaySaved: () {},
@@ -324,7 +337,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
                     return _TvSearchFocusable(
                       onTap: () => _openStreamSelector(item),
-                      onLongPress: () => _addToMyList(item), // LONG PRESS: ADDS TO MY LIST (MOBILE & TV)
+                      onLongPress: () => _addToMyList(item),
                       focusColor: const Color(0xFF0072D2),
                       borderRadius: BorderRadius.circular(8),
                       child: Column(
@@ -366,4 +379,3 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 }
-// END OF FILE

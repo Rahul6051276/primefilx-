@@ -5,14 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/tmdb_service.dart';
-import '../services/stream_service.dart';
 import '../services/catalog_service.dart';
 import '../widgets/mobile_stream_modal.dart';
 import 'search_screen.dart';
 import 'my_list_screen.dart';
-import '../internal_player.dart';
-
-const String kGistPermanentRawUrl = "https://gist.githubusercontent.com/Rahul6051276/5b0a18b2cf69a99d1d3e06629fcbc70a/raw";
 
 class TvFocusable extends StatefulWidget {
   final Widget child;
@@ -66,8 +62,13 @@ class _TvFocusableState extends State<TvFocusable> {
             duration: const Duration(milliseconds: 150),
             decoration: BoxDecoration(
               borderRadius: widget.borderRadius ?? BorderRadius.circular(10),
-              border: Border.all(color: _isFocused ? widget.focusColor : Colors.transparent, width: _isFocused ? 2.5 : 0),
-              boxShadow: _isFocused ? [BoxShadow(color: widget.focusColor.withOpacity(0.6), blurRadius: 10, spreadRadius: 2)] : null,
+              border: Border.all(
+                color: _isFocused ? widget.focusColor : Colors.transparent,
+                width: _isFocused ? 2.5 : 0,
+              ),
+              boxShadow: _isFocused
+                  ? [BoxShadow(color: widget.focusColor.withOpacity(0.6), blurRadius: 10, spreadRadius: 2)]
+                  : null,
             ),
             child: widget.child,
           ),
@@ -80,7 +81,12 @@ class _TvFocusableState extends State<TvFocusable> {
 class XtreamAccount {
   final String name, host, username, password;
   List<dynamic>? cachedVod, cachedSeries;
-  XtreamAccount({required this.name, required this.host, required this.username, required this.password});
+  XtreamAccount({
+    required this.name,
+    required this.host,
+    required this.username,
+    required this.password,
+  });
 }
 
 class MobileHomeScreen extends StatefulWidget {
@@ -97,8 +103,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   int _currentBannerIndex = 0;
   Timer? _carouselTimer;
   bool isLoading = true;
-
-  final Map<String, String> _iptvHeaders = {'User-Agent': 'IPTVSmartersPro/1.0.0 (Linux; Android 12)', 'Accept': '*/*'};
 
   @override
   void initState() {
@@ -121,7 +125,11 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       if (_bannerController.hasClients) {
         int next = _currentBannerIndex + 1;
         if (next >= total) next = 0;
-        _bannerController.animateToPage(next, duration: const Duration(milliseconds: 600), curve: Curves.easeInOut);
+        _bannerController.animateToPage(
+          next,
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeInOut,
+        );
       }
     });
   }
@@ -136,8 +144,16 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   Future<void> _loadCachedDataInstantly() async {
     try {
       final p = await SharedPreferences.getInstance();
-      final b = p.getString('c_bolly'), s = p.getString('c_south'), h = p.getString('c_holly'), hi = p.getString('c_hitv'), en = p.getString('c_entv');
-      if (b != null) { bollywoodLatest = jsonDecode(b); heroBanners = bollywoodLatest.take(6).toList(); _startCarouselTimer(heroBanners.length); }
+      final b = p.getString('c_bolly'),
+          s = p.getString('c_south'),
+          h = p.getString('c_holly'),
+          hi = p.getString('c_hitv'),
+          en = p.getString('c_entv');
+      if (b != null) {
+        bollywoodLatest = jsonDecode(b);
+        heroBanners = bollywoodLatest.take(6).toList();
+        _startCarouselTimer(heroBanners.length);
+      }
       if (s != null) southMovies = jsonDecode(s);
       if (h != null) hollywoodHindiDubbed = jsonDecode(h);
       if (hi != null) hindiWebSeries = jsonDecode(hi);
@@ -150,22 +166,38 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
   Future<void> _fetchAllDataLightningFast() async {
     final p = await SharedPreferences.getInstance();
+    final gistEndpoint = AppConfig.gistUrl.trim();
+    final apiKey = AppConfig.tmdbKey.trim();
 
-    try {
-      final res = await http.get(Uri.parse("$kGistPermanentRawUrl?t=${DateTime.now().millisecondsSinceEpoch}")).timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200) {
-        final d = jsonDecode(res.body);
-        activeProviders = d['active_providers'] ?? [];
-        _parseXtream(d);
-      }
-    } catch (_) {}
+    if (gistEndpoint.isNotEmpty) {
+      try {
+        final sep = gistEndpoint.contains('?') ? '&' : '?';
+        final res = await http
+            .get(Uri.parse('$gistEndpoint${sep}t=${DateTime.now().millisecondsSinceEpoch}'))
+            .timeout(const Duration(seconds: 8));
+        if (res.statusCode == 200) {
+          final d = jsonDecode(res.body);
+          if (d is Map) {
+            activeProviders = d['active_providers'] ?? d['providers'] ?? [];
+            _parseXtream(d);
+          } else if (d is List) {
+            activeProviders = d;
+          }
+        }
+      } catch (_) {}
+    }
 
-    if (activeProviders.isEmpty) activeProviders = [{'name': 'Render Cloud', 'url': 'https://vidsrc.me'}];
+    if (apiKey.isEmpty) {
+      if (mounted) setState(() => isLoading = false);
+      return;
+    }
 
     bool isClean(dynamic m) {
       final g = (m['genre_ids'] as List?) ?? [];
       final lang = m['original_language']?.toString().toLowerCase() ?? '';
-      if (g.contains(16) || lang == 'ja' || g.contains(10766) || g.contains(10764) || g.contains(10762) || g.contains(10763)) return false;
+      if (g.contains(16) || lang == 'ja' || g.contains(10766) || g.contains(10764) || g.contains(10762) || g.contains(10763)) {
+        return false;
+      }
       return true;
     }
 
@@ -184,11 +216,37 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     }
 
     await Future.wait([
-      fetchCat('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=hi&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&without_genres=16', (l) { bollywoodLatest = l; heroBanners = l.take(6).toList(); _startCarouselTimer(heroBanners.length); }, 'c_bolly'),
-      fetchCat('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=te|ta|ml|kn&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&without_genres=16', (l) => southMovies = l, 'c_south'),
-      fetchCat('${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_original_language=en&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&without_genres=16', (l) => hollywoodHindiDubbed = l, 'c_holly'),
-      fetchCat('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=1024|213|3919|2893|2892|3671&with_original_language=hi&without_genres=16,10762,10764,10766,10767,10763&vote_count.gte=10&sort_by=popularity.desc', (l) => hindiWebSeries = l, 'c_hitv', isTv: true),
-      fetchCat('${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=213|1024|49|2739|2552&without_genres=16,10762,10764,10766,10767,10763&vote_count.gte=20&sort_by=popularity.desc', (l) => englishWebSeries = l, 'c_entv', isTv: true),
+      fetchCat(
+        '${AppConfig.tmdbBase}/discover/movie?api_key=$apiKey&with_original_language=hi&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&without_genres=16',
+        (l) {
+          bollywoodLatest = l;
+          heroBanners = l.take(6).toList();
+          _startCarouselTimer(heroBanners.length);
+        },
+        'c_bolly',
+      ),
+      fetchCat(
+        '${AppConfig.tmdbBase}/discover/movie?api_key=$apiKey&with_original_language=te|ta|ml|kn&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&without_genres=16',
+        (l) => southMovies = l,
+        'c_south',
+      ),
+      fetchCat(
+        '${AppConfig.tmdbBase}/discover/movie?api_key=$apiKey&with_original_language=en&primary_release_date.gte=2024-01-01&sort_by=popularity.desc&without_genres=16',
+        (l) => hollywoodHindiDubbed = l,
+        'c_holly',
+      ),
+      fetchCat(
+        '${AppConfig.tmdbBase}/discover/tv?api_key=$apiKey&with_networks=1024|213|3919|2893|2892|3671&with_original_language=hi&without_genres=16,10762,10764,10766,10767,10763&vote_count.gte=10&sort_by=popularity.desc',
+        (l) => hindiWebSeries = l,
+        'c_hitv',
+        isTv: true,
+      ),
+      fetchCat(
+        '${AppConfig.tmdbBase}/discover/tv?api_key=$apiKey&with_networks=213|1024|49|2739|2552&without_genres=16,10762,10764,10766,10767,10763&vote_count.gte=20&sort_by=popularity.desc',
+        (l) => englishWebSeries = l,
+        'c_entv',
+        isTv: true,
+      ),
     ]);
 
     if (mounted) setState(() => isLoading = false);
@@ -197,14 +255,22 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   void _parseXtream(dynamic data) {
     _xtreamAccounts.clear();
     if (data is! Map) return;
-    final provs = data['active_providers'];
+    final provs = data['active_providers'] ?? data['providers'];
     if (provs is List) {
       for (var p in provs) {
         if (p is Map && (p['type'] == 'xtream' || p['xc_host'] != null)) {
           final host = (p['xc_host'] ?? p['server'] ?? p['url'])?.toString().replaceAll(RegExp(r'/+$'), '');
-          final user = (p['xc_username'] ?? p['username'])?.toString(), pass = (p['xc_password'] ?? p['password'])?.toString();
+          final user = (p['xc_username'] ?? p['username'])?.toString();
+          final pass = (p['xc_password'] ?? p['password'])?.toString();
           if (host != null && user != null && pass != null && host.isNotEmpty) {
-            _xtreamAccounts.add(XtreamAccount(name: (p['name'] ?? 'Xtream Server').toString(), host: host, username: user, password: pass));
+            _xtreamAccounts.add(
+              XtreamAccount(
+                name: (p['name'] ?? 'Xtream Server').toString(),
+                host: host,
+                username: user,
+                password: pass,
+              ),
+            );
           }
         }
       }
@@ -212,20 +278,17 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   void _onItemTapped(dynamic item) {
-    bool isTv = item['isTv'] == true;
-    if (isTv) {
-      showModalBottomSheet(
-        context: context, isScrollControlled: true, backgroundColor: const Color(0xFF16181F),
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        builder: (_) => _MobileSeasonEpisodeSelectorSheet(item: Map<String, dynamic>.from(item), activeProviders: activeProviders, xtreamAccounts: _xtreamAccounts, iptvHeaders: _iptvHeaders),
-      );
-    } else {
-      showModalBottomSheet(
-        context: context, isScrollControlled: true, backgroundColor: const Color(0xFF16181F),
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        builder: (_) => MobileQualitySelectorSheet(item: Map<String, dynamic>.from(item), providers: activeProviders, onPlaySaved: _refreshCw),
-      );
-    }
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF16181F),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => MobileMovieDetailSheet(
+        item: Map<String, dynamic>.from(item),
+        providers: activeProviders,
+        onPlaySaved: _refreshCw,
+      ),
+    );
   }
 
   Future<void> _refreshCw() async {
@@ -244,13 +307,30 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       if (!list.any((e) => e['tmdb_id'].toString() == item['tmdb_id'].toString())) {
         list.add(item);
         await p.setString('my_list_mobile', jsonEncode(list));
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${item['title']} added to My List'), backgroundColor: const Color(0xFF0072D2)));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${item['title']} added to My List'),
+              backgroundColor: const Color(0xFF0072D2),
+            ),
+          );
+        }
       }
     } catch (_) {}
   }
 
   void _openProvider(String name, Color color) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => _MobileCategoryGridScreen(providerName: name, providerColor: color, onItemTapped: _onItemTapped, onItemLongPressed: _addToMyList)));
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _MobileCategoryGridScreen(
+          providerName: name,
+          providerColor: color,
+          onItemTapped: _onItemTapped,
+          onItemLongPressed: _addToMyList,
+        ),
+      ),
+    );
   }
 
   @override
@@ -261,13 +341,21 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       appBar: PreferredSize(
         preferredSize: Size.fromHeight(isTv ? 70 : 60),
         child: AppBar(
-          backgroundColor: const Color(0xFF0F1014), elevation: 0, automaticallyImplyLeading: false,
-          title: Text('Primeflix', style: TextStyle(fontWeight: FontWeight.w900, fontSize: isTv ? 26 : 22, color: Colors.white)),
+          backgroundColor: const Color(0xFF0F1014),
+          elevation: 0,
+          automaticallyImplyLeading: false,
+          title: Text(
+            'Primeflix',
+            style: TextStyle(fontWeight: FontWeight.w900, fontSize: isTv ? 26 : 22, color: Colors.white),
+          ),
           actions: [
             TvFocusable(
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen())),
               borderRadius: BorderRadius.circular(20),
-              child: Padding(padding: const EdgeInsets.all(8.0), child: Icon(Icons.search_rounded, color: Colors.white, size: isTv ? 30 : 26)),
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Icon(Icons.search_rounded, color: Colors.white, size: isTv ? 30 : 26),
+              ),
             ),
           ],
         ),
@@ -275,14 +363,22 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       body: isLoading && bollywoodLatest.isEmpty
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF0072D2)))
           : RefreshIndicator(
-              color: const Color(0xFF0072D2), backgroundColor: const Color(0xFF16181F), onRefresh: _fetchAllDataLightningFast,
+              color: const Color(0xFF0072D2),
+              backgroundColor: const Color(0xFF16181F),
+              onRefresh: _fetchAllDataLightningFast,
               child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildCarousel(isTv),
                     const SizedBox(height: 16),
-                    Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text('Streaming', style: TextStyle(color: Colors.white, fontSize: isTv ? 20 : 16, fontWeight: FontWeight.bold))),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'Streaming',
+                        style: TextStyle(color: Colors.white, fontSize: isTv ? 20 : 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     _buildProviders(isTv),
                     const SizedBox(height: 16),
@@ -301,10 +397,18 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               ),
             ),
       bottomNavigationBar: BottomNavigationBar(
-        backgroundColor: const Color(0xFF0F1014), type: BottomNavigationBarType.fixed, selectedItemColor: const Color(0xFF0072D2), unselectedItemColor: Colors.white54,
+        backgroundColor: const Color(0xFF0F1014),
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: const Color(0xFF0072D2),
+        unselectedItemColor: Colors.white54,
         currentIndex: 0,
-        onTap: (i) { if (i == 1) Navigator.push(context, MaterialPageRoute(builder: (_) => const MyListScreen())); },
-        items: const [BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'), BottomNavigationBarItem(icon: Icon(Icons.bookmark_added_rounded), label: 'My List')],
+        onTap: (i) {
+          if (i == 1) Navigator.push(context, MaterialPageRoute(builder: (_) => const MyListScreen()));
+        },
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.bookmark_added_rounded), label: 'My List'),
+        ],
       ),
     );
   }
@@ -314,14 +418,20 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     return SizedBox(
       height: isTv ? 320 : 220,
       child: PageView.builder(
-        controller: _bannerController, onPageChanged: (i) => setState(() => _currentBannerIndex = i), itemCount: heroBanners.length,
+        controller: _bannerController,
+        onPageChanged: (i) => setState(() => _currentBannerIndex = i),
+        itemCount: heroBanners.length,
         itemBuilder: (ctx, i) {
           final item = heroBanners[i];
-          final imgUrl = (item['backdrop'] != null && item['backdrop'].toString().isNotEmpty) ? item['backdrop'] : (item['poster'] ?? '');
+          final imgUrl = (item['backdrop'] != null && item['backdrop'].toString().isNotEmpty)
+              ? item['backdrop']
+              : (item['poster'] ?? '');
           final ratingStr = _formatRating(item['rating']);
 
           return TvFocusable(
-            onTap: () => _onItemTapped(item), onLongPress: () => _addToMyList(item), borderRadius: BorderRadius.circular(14),
+            onTap: () => _onItemTapped(item),
+            onLongPress: () => _addToMyList(item),
+            borderRadius: BorderRadius.circular(14),
             child: Container(
               margin: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
@@ -330,17 +440,35 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 color: Colors.grey[900],
               ),
               child: Container(
-                decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), gradient: LinearGradient(colors: [Colors.transparent, Colors.black.withOpacity(0.85)], begin: Alignment.topCenter, end: Alignment.bottomCenter)),
-                padding: const EdgeInsets.all(16), alignment: Alignment.bottomCenter,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  gradient: LinearGradient(
+                    colors: [Colors.transparent, Colors.black.withOpacity(0.85)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+                padding: const EdgeInsets.all(16),
+                alignment: Alignment.bottomCenter,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Flexible(child: Text(item['title'] ?? '', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: isTv ? 24 : 18, fontWeight: FontWeight.w900))),
+                    Flexible(
+                      child: Text(
+                        item['title'] ?? '',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white, fontSize: isTv ? 24 : 18, fontWeight: FontWeight.w900),
+                      ),
+                    ),
                     if (ratingStr.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.black.withOpacity(0.8), borderRadius: BorderRadius.circular(5), border: Border.all(color: Colors.amber, width: 1)),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.8),
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(color: Colors.amber, width: 1),
+                        ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -372,15 +500,30 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     return SizedBox(
       height: isTv ? 65 : 55,
       child: ListView.builder(
-        scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 14), itemCount: list.length,
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        itemCount: list.length,
         itemBuilder: (ctx, i) {
-          final p = list[i]; final name = p['name'] as String, color = p['color'] as Color;
+          final p = list[i];
+          final name = p['name'] as String, color = p['color'] as Color;
           return TvFocusable(
-            onTap: () => _openProvider(name, color), focusColor: color, borderRadius: BorderRadius.circular(10),
+            onTap: () => _openProvider(name, color),
+            focusColor: color,
+            borderRadius: BorderRadius.circular(10),
             child: Container(
-              width: isTv ? 150 : 120, margin: const EdgeInsets.only(right: 10), alignment: Alignment.center,
-              decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10), boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 6, offset: const Offset(0, 3))]),
-              child: Text(name.toUpperCase(), textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: isTv ? 13 : 11)),
+              width: isTv ? 150 : 120,
+              margin: const EdgeInsets.only(right: 10),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 6, offset: const Offset(0, 3))],
+              ),
+              child: Text(
+                name.toUpperCase(),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: isTv ? 13 : 11),
+              ),
             ),
           );
         },
@@ -393,20 +536,28 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), child: Text(title, style: TextStyle(color: Colors.white, fontSize: isTv ? 19 : 16, fontWeight: FontWeight.bold))),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text(title, style: TextStyle(color: Colors.white, fontSize: isTv ? 19 : 16, fontWeight: FontWeight.bold)),
+        ),
         SizedBox(
           height: isTv ? 210 : 160,
           child: ListView.builder(
-            scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12), itemCount: items.length,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: items.length,
             itemBuilder: (ctx, i) {
               final item = items[i];
               final pUrl = (item['poster'] ?? '').toString();
               final ratingStr = _formatRating(item['rating']);
 
               return TvFocusable(
-                onTap: () => _onItemTapped(item), onLongPress: () => _addToMyList(item), borderRadius: BorderRadius.circular(8),
+                onTap: () => _onItemTapped(item),
+                onLongPress: () => _addToMyList(item),
+                borderRadius: BorderRadius.circular(8),
                 child: Container(
-                  width: isTv ? 140 : 110, margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: isTv ? 140 : 110,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -418,17 +569,27 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                             children: [
                               (pUrl.isNotEmpty)
                                   ? Image.network(
-                                      pUrl, fit: BoxFit.cover, width: double.infinity, cacheWidth: 300,
-                                      errorBuilder: (_, __, ___) => Container(color: Colors.grey[850], child: const Icon(Icons.broken_image, color: Colors.white24)),
+                                      pUrl,
+                                      fit: BoxFit.cover,
+                                      width: double.infinity,
+                                      cacheWidth: 300,
+                                      errorBuilder: (_, __, ___) => Container(
+                                        color: Colors.grey[850],
+                                        child: const Icon(Icons.broken_image, color: Colors.white24),
+                                      ),
                                     )
                                   : Container(color: Colors.grey[850], child: const Icon(Icons.movie, color: Colors.white24)),
-                              // GOLDEN RATING BADGE
                               if (ratingStr.isNotEmpty)
                                 Positioned(
-                                  top: 5, right: 5,
+                                  top: 5,
+                                  right: 5,
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.85), borderRadius: BorderRadius.circular(4), border: Border.all(color: Colors.amber.withOpacity(0.8), width: 0.8)),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.85),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: Colors.amber.withOpacity(0.8), width: 0.8),
+                                    ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
@@ -444,7 +605,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(item['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white, fontSize: isTv ? 13 : 12)),
+                      Text(
+                        item['title'] ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.white, fontSize: isTv ? 13 : 12),
+                      ),
                     ],
                   ),
                 ),
@@ -457,121 +623,31 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 }
 
-class _MobileSeasonEpisodeSelectorSheet extends StatefulWidget {
-  final Map<String, dynamic> item;
-  final List activeProviders, xtreamAccounts;
-  final Map<String, String> iptvHeaders;
-  const _MobileSeasonEpisodeSelectorSheet({required this.item, required this.activeProviders, required this.xtreamAccounts, required this.iptvHeaders});
-  @override
-  State<_MobileSeasonEpisodeSelectorSheet> createState() => _MobileSeasonEpisodeSelectorSheetState();
-}
-
-class _MobileSeasonEpisodeSelectorSheetState extends State<_MobileSeasonEpisodeSelectorSheet> {
-  bool isLoading = true;
-  String? errorMessage;
-  Map<String, List<dynamic>> seasonsMap = {};
-  String? selectedSeason;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSeries();
-  }
-
-  Future<void> _loadSeries() async {
-    final clean = (widget.item['title'] ?? '').toString().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-    for (var acc in widget.xtreamAccounts) {
-      try {
-        final res = await http.get(Uri.parse('${acc.host}/player_api.php?username=${acc.username}&password=${acc.password}&action=get_series'), headers: widget.iptvHeaders).timeout(const Duration(seconds: 15));
-        if (res.statusCode == 200) {
-          final list = jsonDecode(res.body) as List;
-          final target = list.firstWhere((s) {
-            final n = (s['name'] ?? '').toString().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-            return n.contains(clean) || clean.contains(n);
-          }, orElse: () => null);
-
-          if (target != null) {
-            final info = await http.get(Uri.parse('${acc.host}/player_api.php?username=${acc.username}&password=${acc.password}&action=get_series_info&series_id=${target['series_id']}'), headers: widget.iptvHeaders).timeout(const Duration(seconds: 15));
-            if (info.statusCode == 200) {
-              final epData = jsonDecode(info.body)['episodes'];
-              if (epData is Map && epData.isNotEmpty) {
-                epData.forEach((k, v) { if (v is List) seasonsMap[k.toString()] = v; });
-                if (seasonsMap.isNotEmpty) { selectedSeason = seasonsMap.keys.first; break; }
-              }
-            }
-          }
-        }
-      } catch (_) {}
-    }
-    if (mounted) setState(() { isLoading = false; if (seasonsMap.isEmpty) errorMessage = 'Web series Xtream IPTV par nahi mili!'; });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16), height: MediaQuery.of(context).size.height * 0.65,
-      decoration: const BoxDecoration(color: Color(0xFF16181F), borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(child: Text(widget.item['title'] ?? 'Select Episode', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
-              if (seasonsMap.isNotEmpty)
-                DropdownButton<String>(
-                  value: selectedSeason, dropdownColor: const Color(0xFF1F222E), style: const TextStyle(color: Color(0xFF0072D2), fontWeight: FontWeight.bold), underline: const SizedBox(),
-                  items: seasonsMap.keys.map((s) => DropdownMenuItem(value: s, child: Text('Season $s'))).toList(),
-                  onChanged: (v) { if (v != null) setState(() => selectedSeason = v); },
-                ),
-            ],
-          ),
-          const Divider(color: Colors.white24),
-          Expanded(
-            child: isLoading
-                ? const Center(child: CircularProgressIndicator(color: Color(0xFF0072D2)))
-                : errorMessage != null
-                    ? Center(child: Text(errorMessage!, style: const TextStyle(color: Colors.white60)))
-                    : ListView.builder(
-                        itemCount: seasonsMap[selectedSeason]?.length ?? 0,
-                        itemBuilder: (ctx, i) {
-                          final ep = seasonsMap[selectedSeason]![i]; final epNum = ep['episode_num'] ?? (i + 1);
-                          return TvFocusable(
-                            onTap: () {
-                              Navigator.pop(context);
-                              showModalBottomSheet(
-                                context: context, isScrollControlled: true, backgroundColor: const Color(0xFF16181F),
-                                shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-                                builder: (_) => MobileQualitySelectorSheet(item: widget.item, season: int.tryParse(selectedSeason ?? '1') ?? 1, episode: int.tryParse(epNum.toString()) ?? 1, providers: widget.activeProviders, onPlaySaved: () {}),
-                              );
-                            },
-                            child: ListTile(
-                              leading: Container(width: 38, height: 38, alignment: Alignment.center, decoration: BoxDecoration(color: const Color(0xFF0072D2).withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: Text('$epNum', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
-                              title: Text(ep['title'] ?? 'Episode $epNum', style: const TextStyle(color: Colors.white, fontSize: 14)),
-                              trailing: const Icon(Icons.play_circle_fill, color: Color(0xFF0072D2), size: 30),
-                            ),
-                          );
-                        },
-                      ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _MobileCategoryGridScreen extends StatefulWidget {
-  final String providerName; final Color providerColor; final Function(dynamic) onItemTapped, onItemLongPressed;
-  const _MobileCategoryGridScreen({required this.providerName, required this.providerColor, required this.onItemTapped, required this.onItemLongPressed});
+  final String providerName;
+  final Color providerColor;
+  final Function(dynamic) onItemTapped, onItemLongPressed;
+  const _MobileCategoryGridScreen({
+    required this.providerName,
+    required this.providerColor,
+    required this.onItemTapped,
+    required this.onItemLongPressed,
+  });
   @override
   State<_MobileCategoryGridScreen> createState() => _MobileCategoryGridScreenState();
 }
 
 class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
-  String selectedType = 'Movies'; bool isLoading = true; List<dynamic> items = [];
+  String selectedType = 'Movies';
+  bool isLoading = true;
+  List<dynamic> items = [];
   final Map<String, List<dynamic>> _cache = {};
 
   @override
-  void initState() { super.initState(); _loadCatalog(); }
+  void initState() {
+    super.initState();
+    _loadCatalog();
+  }
 
   String _getIds(String n) {
     if (n.contains('Hotstar')) return '122|390|337|220|384';
@@ -589,18 +665,31 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
   }
 
   Future<void> _loadCatalog() async {
-    if (_cache.containsKey(selectedType)) { setState(() { items = _cache[selectedType]!; isLoading = false; }); return; }
+    if (_cache.containsKey(selectedType)) {
+      setState(() {
+        items = _cache[selectedType]!;
+        isLoading = false;
+      });
+      return;
+    }
     setState(() => isLoading = true);
-    final isTv = selectedType == 'Web Series'; final ep = isTv ? 'discover/tv' : 'discover/movie';
+    final apiKey = AppConfig.tmdbKey.trim();
+    if (apiKey.isEmpty) {
+      if (mounted) setState(() => isLoading = false);
+      return;
+    }
+
+    final isTv = selectedType == 'Web Series';
+    final ep = isTv ? 'discover/tv' : 'discover/movie';
     final ids = _getIds(widget.providerName);
     List<dynamic> res = [];
 
     try {
-      final reqs = await Future.wait([1, 2, 3, 4].map((page) =>
-        http.get(Uri.parse('${AppConfig.tmdbBase}/$ep?api_key=${AppConfig.tmdbKey}&watch_region=IN&with_watch_providers=$ids&sort_by=popularity.desc&without_genres=16,10762,10764,10766,10767,10763&page=$page'))
-            .timeout(const Duration(seconds: 12))
-            .catchError((_) => http.Response('{}', 408))
-      ));
+      final reqs = await Future.wait([1, 2, 3, 4].map((page) => http
+          .get(Uri.parse(
+              '${AppConfig.tmdbBase}/$ep?api_key=$apiKey&watch_region=IN&with_watch_providers=$ids&sort_by=popularity.desc&without_genres=16,10762,10764,10766,10767,10763&page=$page'))
+          .timeout(const Duration(seconds: 12))
+          .catchError((_) => http.Response('{}', 408))));
 
       for (var r in reqs) {
         if (r.statusCode == 200) {
@@ -610,25 +699,53 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
             if (g.contains(16) || m['original_language'] == 'ja' || g.contains(10766) || g.contains(10764)) continue;
             final p = m['poster_path'];
             if (p != null) {
-              res.add({'tmdb_id': m['id'], 'title': isTv ? (m['name'] ?? m['original_name'] ?? '') : (m['title'] ?? m['original_title'] ?? ''), 'poster': 'https://image.tmdb.org/t/p/w500$p', 'backdrop': m['backdrop_path'] != null ? 'https://image.tmdb.org/t/p/w780${m['backdrop_path']}' : '', 'year': (isTv ? (m['first_air_date'] ?? '') : (m['release_date'] ?? '')).toString().split('-').first, 'rating': (m['vote_average'] ?? 0.0).toString(), 'isTv': isTv});
+              res.add({
+                'tmdb_id': m['id'],
+                'title': isTv ? (m['name'] ?? m['original_name'] ?? '') : (m['title'] ?? m['original_title'] ?? ''),
+                'overview': (m['overview'] ?? '').toString(),
+                'poster': 'https://image.tmdb.org/t/p/w500$p',
+                'backdrop': m['backdrop_path'] != null ? 'https://image.tmdb.org/t/p/w780${m['backdrop_path']}' : '',
+                'year': (isTv ? (m['first_air_date'] ?? '') : (m['release_date'] ?? '')).toString().split('-').first,
+                'rating': (m['vote_average'] ?? 0.0).toString(),
+                'isTv': isTv,
+              });
             }
           }
         }
       }
 
       if (res.length < 25 && widget.providerName.contains('Hotstar')) {
-        final fb = isTv ? '${AppConfig.tmdbBase}/discover/tv?api_key=${AppConfig.tmdbKey}&with_networks=3919|2739&without_genres=16,10766&sort_by=popularity.desc&page=1' : '${AppConfig.tmdbBase}/discover/movie?api_key=${AppConfig.tmdbKey}&with_companies=2|420|3&without_genres=16&sort_by=popularity.desc&page=1';
+        final fb = isTv
+            ? '${AppConfig.tmdbBase}/discover/tv?api_key=$apiKey&with_networks=3919|2739&without_genres=16,10766&sort_by=popularity.desc&page=1'
+            : '${AppConfig.tmdbBase}/discover/movie?api_key=$apiKey&with_companies=2|420|3&without_genres=16&sort_by=popularity.desc&page=1';
         final fbR = await http.get(Uri.parse(fb)).timeout(const Duration(seconds: 10)).catchError((_) => http.Response('{}', 408));
         if (fbR.statusCode == 200) {
           for (var m in (jsonDecode(fbR.body)['results'] as List? ?? [])) {
             final p = m['poster_path'];
-            if (p != null) res.add({'tmdb_id': m['id'], 'title': isTv ? (m['name'] ?? '') : (m['title'] ?? ''), 'poster': 'https://image.tmdb.org/t/p/w500$p', 'backdrop': '', 'year': '', 'rating': (m['vote_average'] ?? 0.0).toString(), 'isTv': isTv});
+            if (p != null) {
+              res.add({
+                'tmdb_id': m['id'],
+                'title': isTv ? (m['name'] ?? '') : (m['title'] ?? ''),
+                'overview': (m['overview'] ?? '').toString(),
+                'poster': 'https://image.tmdb.org/t/p/w500$p',
+                'backdrop': '',
+                'year': '',
+                'rating': (m['vote_average'] ?? 0.0).toString(),
+                'isTv': isTv,
+              });
+            }
           }
         }
       }
     } catch (_) {}
 
-    if (mounted) setState(() { items = res; _cache[selectedType] = res; isLoading = false; });
+    if (mounted) {
+      setState(() {
+        items = res;
+        _cache[selectedType] = res;
+        isLoading = false;
+      });
+    }
   }
 
   @override
@@ -640,10 +757,20 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0F1014),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0F1014), elevation: 0, iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: const Color(0xFF0F1014),
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
         title: Row(children: [
-          Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: widget.providerColor, borderRadius: BorderRadius.circular(6)), child: Text(widget.providerName.toUpperCase(), style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: isTv ? 13 : 11))),
-          const SizedBox(width: 8), Text('(${items.length})', style: const TextStyle(color: Colors.white54, fontSize: 13)),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(color: widget.providerColor, borderRadius: BorderRadius.circular(6)),
+            child: Text(
+              widget.providerName.toUpperCase(),
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: isTv ? 13 : 11),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text('(${items.length})', style: const TextStyle(color: Colors.white54, fontSize: 13)),
         ]),
         actions: [
           Center(
@@ -651,21 +778,37 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TvFocusable(
-                  onTap: () { if (selectedType != 'Movies') { setState(() => selectedType = 'Movies'); _loadCatalog(); } },
+                  onTap: () {
+                    if (selectedType != 'Movies') {
+                      setState(() => selectedType = 'Movies');
+                      _loadCatalog();
+                    }
+                  },
                   borderRadius: BorderRadius.circular(20),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(color: selectedType == 'Movies' ? widget.providerColor : const Color(0xFF1E2029), borderRadius: BorderRadius.circular(20)),
+                    decoration: BoxDecoration(
+                      color: selectedType == 'Movies' ? widget.providerColor : const Color(0xFF1E2029),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                     child: const Text('Movies', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                   ),
                 ),
                 const SizedBox(width: 8),
                 TvFocusable(
-                  onTap: () { if (selectedType != 'Web Series') { setState(() => selectedType = 'Web Series'); _loadCatalog(); } },
+                  onTap: () {
+                    if (selectedType != 'Web Series') {
+                      setState(() => selectedType = 'Web Series');
+                      _loadCatalog();
+                    }
+                  },
                   borderRadius: BorderRadius.circular(20),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(color: selectedType == 'Web Series' ? widget.providerColor : const Color(0xFF1E2029), borderRadius: BorderRadius.circular(20)),
+                    decoration: BoxDecoration(
+                      color: selectedType == 'Web Series' ? widget.providerColor : const Color(0xFF1E2029),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                     child: const Text('Web Series', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                   ),
                 ),
@@ -679,7 +822,12 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
           ? Center(child: CircularProgressIndicator(color: widget.providerColor))
           : GridView.builder(
               padding: const EdgeInsets.all(12),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: cols, childAspectRatio: 0.62, crossAxisSpacing: 10, mainAxisSpacing: 12),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: cols,
+                childAspectRatio: 0.62,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 12,
+              ),
               itemCount: items.length,
               itemBuilder: (ctx, i) {
                 final it = items[i];
@@ -687,7 +835,10 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
                 final ratingStr = _formatRating(it['rating']);
 
                 return TvFocusable(
-                  onTap: () => widget.onItemTapped(it), onLongPress: () => widget.onItemLongPressed(it), focusColor: widget.providerColor, borderRadius: BorderRadius.circular(8),
+                  onTap: () => widget.onItemTapped(it),
+                  onLongPress: () => widget.onItemLongPressed(it),
+                  focusColor: widget.providerColor,
+                  borderRadius: BorderRadius.circular(8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -699,17 +850,27 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
                             children: [
                               (pUrl.isNotEmpty)
                                   ? Image.network(
-                                      pUrl, fit: BoxFit.cover, width: double.infinity, cacheWidth: 300,
-                                      errorBuilder: (_, __, ___) => Container(color: Colors.grey[900], child: const Icon(Icons.broken_image, color: Colors.white24)),
+                                      pUrl,
+                                      fit: BoxFit.cover,
+                                      width: double.infinity,
+                                      cacheWidth: 300,
+                                      errorBuilder: (_, __, ___) => Container(
+                                        color: Colors.grey[900],
+                                        child: const Icon(Icons.broken_image, color: Colors.white24),
+                                      ),
                                     )
                                   : Container(color: Colors.grey[900], child: const Icon(Icons.movie, color: Colors.white24)),
-                              // RATING BADGE ON CATEGORY GRID
                               if (ratingStr.isNotEmpty)
                                 Positioned(
-                                  top: 5, right: 5,
+                                  top: 5,
+                                  right: 5,
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.85), borderRadius: BorderRadius.circular(4), border: Border.all(color: Colors.amber.withOpacity(0.8), width: 0.8)),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.85),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: Colors.amber.withOpacity(0.8), width: 0.8),
+                                    ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
@@ -725,7 +886,12 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(it['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white, fontSize: isTv ? 12 : 11, fontWeight: FontWeight.w600)),
+                      Text(
+                        it['title'] ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.white, fontSize: isTv ? 12 : 11, fontWeight: FontWeight.w600),
+                      ),
                     ],
                   ),
                 );
@@ -734,4 +900,3 @@ class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
     );
   }
 }
-// END OF FILE
