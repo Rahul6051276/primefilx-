@@ -61,35 +61,19 @@ jobs:
           fi
 
           MANIFEST="mobile_build_temp/android/app/src/main/AndroidManifest.xml"
-          python3 - << 'PYEOF'
-from pathlib import Path
+          sed -i 's/android:label="[^"]*"/android:label="Primeflix"/' "$MANIFEST"
 
-manifest_path = Path("mobile_build_temp/android/app/src/main/AndroidManifest.xml")
-text = manifest_path.read_text(encoding="utf-8")
+          if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
+            sed -i '/<application/i <uses-permission android:name="android.permission.INTERNET" />' "$MANIFEST"
+          fi
 
-if "android.permission.INTERNET" not in text and "<application" in text:
-    text = text.replace("<application", '<uses-permission android:name="android.permission.INTERNET" />\n\n    <application', 1)
+          if ! grep -q 'android:usesCleartextTraffic="true"' "$MANIFEST"; then
+            sed -i 's/<application/<application android:usesCleartextTraffic="true"/' "$MANIFEST"
+          fi
 
-if 'android:usesCleartextTraffic="true"' not in text and "<application" in text:
-    text = text.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
-
-import re
-text = re.sub(r'android:label="[^"]*"', 'android:label="Primeflix"', text, count=1)
-
-activity_block = """        <activity
-            android:name=".media3.Media3PlayerActivity"
-            android:exported="false"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            android:screenOrientation="sensorLandscape"
-            android:hardwareAccelerated="true"
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
-"""
-
-if "Media3PlayerActivity" not in text and "</application>" in text:
-    text = text.replace("</application>", activity_block + "    </application>", 1)
-
-manifest_path.write_text(text, encoding="utf-8")
-PYEOF
+          if ! grep -q "Media3PlayerActivity" "$MANIFEST"; then
+            awk '/<\/application>/{print "        <activity android:name=\".media3.Media3PlayerActivity\" android:exported=\"false\" android:configChanges=\"orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode\" android:screenOrientation=\"sensorLandscape\" android:hardwareAccelerated=\"true\" android:theme=\"@android:style/Theme.Black.NoTitleBar.Fullscreen\" />"}1' "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+          fi
 
           GRADLE_FILE="mobile_build_temp/android/app/build.gradle"
           if [ -f "$GRADLE_FILE" ] && ! grep -q "media3-exoplayer" "$GRADLE_FILE"; then
