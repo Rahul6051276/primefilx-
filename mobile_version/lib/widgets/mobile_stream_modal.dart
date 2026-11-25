@@ -367,8 +367,8 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     return null;
   }
 
-  Future<List>> _searchStremioStreams() async {
-    final List> out = [];
+  Future<List<dynamic>> _searchStremioStreams() async {
+    final out = <dynamic>[];
     final tmdbId = widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
     if (tmdbId == null || tmdbId.isEmpty) return out;
 
@@ -430,8 +430,8 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     return out;
   }
 
-  Future<List>> _searchXtreamStreams() async {
-    final List> out = [];
+  Future<List<dynamic>> _searchXtreamStreams() async {
+    final out = <dynamic>[];
     final title = widget.item['title'] ?? widget.item['name'] ?? '';
     final tmdbId = widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
     final year = widget.item['year']?.toString();
