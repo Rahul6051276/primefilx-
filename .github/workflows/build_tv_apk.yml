@@ -126,5 +126,5 @@ EOF
             * Direct & IPTV/Stremio Streaming Engine
           files: |
             release_apks/Primeflix-Mobile.apk
-        env:
+        env: 
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
