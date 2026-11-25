@@ -81,10 +81,16 @@ jobs:
 
           GRADLE_FILE="mobile_build_temp/android/app/build.gradle"
           if [ -f "$GRADLE_FILE" ]; then
+            sed -i 's/minSdkVersion flutter\.minSdkVersion/minSdkVersion 21/' "$GRADLE_FILE"
+            sed -i 's/minSdk = flutter\.minSdkVersion/minSdk = 21/' "$GRADLE_FILE"
+            sed -i 's/minSdkVersion [0-9]\+/minSdkVersion 21/' "$GRADLE_FILE"
+            sed -i 's/minSdk [0-9]\+/minSdk 21/' "$GRADLE_FILE"
+
             sed -i 's/compileSdkVersion flutter\.compileSdkVersion/compileSdkVersion 34/' "$GRADLE_FILE"
             sed -i 's/compileSdk = flutter\.compileSdkVersion/compileSdk = 34/' "$GRADLE_FILE"
             sed -i 's/compileSdkVersion [0-9]\+/compileSdkVersion 34/' "$GRADLE_FILE"
             sed -i 's/compileSdk [0-9]\+/compileSdk 34/' "$GRADLE_FILE"
+
             sed -i 's/targetSdkVersion flutter\.targetSdkVersion/targetSdkVersion 34/' "$GRADLE_FILE"
             sed -i 's/targetSdk = flutter\.targetSdkVersion/targetSdk = 34/' "$GRADLE_FILE"
             sed -i 's/targetSdkVersion [0-9]\+/targetSdkVersion 34/' "$GRADLE_FILE"
