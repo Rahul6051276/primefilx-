@@ -161,8 +161,8 @@ class _MobileQualitySelectorSheetState
   }
 
   // 2. UNIVERSAL STREMIO ADDON STREAM FETCHER (PENGUPLAY, MEDIAFUSION, ETC.)
-  Future<List>> _searchStremioStreams() async {
-    final List> results = [];
+  Future<List<dynamic>> _searchStremioStreams() async {
+    final results = [];
     final tmdbId =
         widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
     if (tmdbId == null || tmdbId.isEmpty) return results;
@@ -237,8 +237,8 @@ class _MobileQualitySelectorSheetState
   }
 
   // 3. XTREAM IPTV SEARCH
-  Future<List>> _searchXtreamStreams() async {
-    final List> results = [];
+  Future<List<dynamic>> _searchXtreamStreams() async {
+    final results = [];
     final title = widget.item['title'] ?? widget.item['name'] ?? '';
     final tmdbId =
         widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
@@ -259,7 +259,7 @@ class _MobileQualitySelectorSheetState
 
       try {
         if (!isTv) {
-          List<dynamic>? vodList = _vodCache[host];
+          var vodList = _vodCache[host];
           if (vodList == null) {
             final uri = Uri.parse('$host/player_api.php').replace(
               queryParameters: {
@@ -277,7 +277,7 @@ class _MobileQualitySelectorSheetState
             }
           }
           if (vodList != null && vodList.isNotEmpty) {
-            List<dynamic> allM = [];
+            final allM = [];
             for (var v in vodList) {
               final vN = v['name']?.toString() ?? '';
               if (tmdbId != null && v['tmdb_id']?.toString() == tmdbId) {
@@ -308,7 +308,7 @@ class _MobileQualitySelectorSheetState
           }
         } else {
           final sNum = widget.season ?? 1, epNum = widget.episode ?? 1;
-          List<dynamic>? sList = _seriesCache[host];
+          var sList = _seriesCache[host];
           if (sList == null) {
             final uri = Uri.parse('$host/player_api.php').replace(
               queryParameters: {
@@ -382,10 +382,10 @@ class _MobileQualitySelectorSheetState
       itemData['tmdb_id'] = itemData['id'];
     }
 
-    List<dynamic> activeList = List.from(widget.providers);
-    List<dynamic> xtreamStreams = [];
-    List<dynamic> stremioStreams = [];
-    List<dynamic> cloudStreams = [];
+    final activeList = List.from(widget.providers);
+    var xtreamStreams = [];
+    var stremioStreams = [];
+    var cloudStreams = [];
 
     final xtreamTask = _searchXtreamStreams().then((list) {
       if (list.isNotEmpty && mounted) {
