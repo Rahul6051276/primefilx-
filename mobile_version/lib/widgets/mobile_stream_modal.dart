@@ -7,6 +7,7 @@ import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
 import '../services/tmdb_service.dart';
 import '../services/stream_service.dart';
+import '../services/native_media3_player.dart';
 import '../internal_player.dart';
 
 // TV REMOTE D-PAD FOCUS WIDGET
@@ -112,8 +113,8 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
   }
 
   // 2. UNIVERSAL STREMIO ADDON STREAM FETCHER (PENGUPLAY, MEDIAFUSION, ETC.)
-  Future<List<Map<String, dynamic>>> _searchStremioStreams() async {
-    List<Map<String, dynamic>> res = [];
+  Future<List>> _searchStremioStreams() async {
+    List> res = [];
     final tmdbId = widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
     if (tmdbId == null || tmdbId.isEmpty) return res;
 
@@ -174,8 +175,8 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
   }
 
   // 3. XTREAM IPTV SEARCH
-  Future<List<Map<String, dynamic>>> _searchXtreamStreams() async {
-    List<Map<String, dynamic>> res = [];
+  Future<List>> _searchXtreamStreams() async {
+    List> res = [];
     final title = widget.item['title'] ?? widget.item['name'] ?? '';
     final tmdbId = widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
     final year = widget.item['year']?.toString();
@@ -343,6 +344,9 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
     if (!mounted) return;
     final nav = Navigator.of(context, rootNavigator: true);
     final cleanUrl = url.trim();
+    final playTitle = widget.season != null
+        ? '${widget.item['title']} (S${widget.season} E${widget.episode})'
+        : (widget.item['title'] ?? 'Playing').toString();
 
     if (isVlc) {
       try {
@@ -352,8 +356,23 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('VLC ya External Player install nahi hai!')));
       }
     } else {
-      nav.pop();
-      nav.push(MaterialPageRoute(builder: (_) => InternalPlayerScreen(videoUrl: cleanUrl, title: widget.season != null ? '${widget.item['title']} (S${widget.season} E${widget.episode})' : widget.item['title'] ?? 'Playing')));
+      final launchedNative = await NativeMedia3Player.play(
+        url: cleanUrl,
+        title: playTitle,
+      );
+
+      if (!mounted) return;
+      if (!launchedNative) {
+        nav.pop();
+        nav.push(
+          MaterialPageRoute(
+            builder: (_) => InternalPlayerScreen(
+              videoUrl: cleanUrl,
+              title: playTitle,
+            ),
+          ),
+        );
+      }
     }
   }
 
