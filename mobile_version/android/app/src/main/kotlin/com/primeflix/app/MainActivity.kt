@@ -12,6 +12,9 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        Media3Bridge.register(this, flutterEngine)
+        try {
+            Media3Bridge.register(this, flutterEngine)
+        } catch (_: Exception) {
+        }
     }
 }

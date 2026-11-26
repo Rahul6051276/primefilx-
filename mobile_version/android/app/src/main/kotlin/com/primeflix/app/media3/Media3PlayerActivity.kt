@@ -1,5 +1,6 @@
 package com.primeflix.app.media3
 
+import android.app.AlertDialog
 import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.os.Build
@@ -10,6 +11,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -24,7 +26,15 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import org.json.JSONArray
 import java.util.Locale
+
+data class ServerEntry(
+    val title: String,
+    val server: String,
+    val url: String,
+    val isHindi: Boolean
+)
 
 @OptIn(UnstableApi::class)
 class Media3PlayerActivity : AppCompatActivity() {
@@ -33,12 +43,17 @@ class Media3PlayerActivity : AppCompatActivity() {
         const val EXTRA_URL = "extra_url"
         const val EXTRA_TITLE = "extra_title"
         const val EXTRA_HEADERS = "extra_headers"
+        const val EXTRA_SERVERS_JSON = "extra_servers_json"
     }
 
     private var player: ExoPlayer? = null
     private lateinit var playerView: PlayerView
     private lateinit var progressBar: ProgressBar
     private lateinit var statusText: TextView
+    private lateinit var serversButton: Button
+
+    private var customHeaders: HashMap<String, String> = hashMapOf()
+    private val serverList = mutableListOf<ServerEntry>()
 
     private var resizeModeIndex = 0
     private val resizeModes = listOf(
@@ -51,109 +66,208 @@ class Media3PlayerActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        hideSystemBars()
+        try {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            hideSystemBars()
 
-        val streamUrl = intent.getStringExtra(EXTRA_URL).orEmpty()
-        val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
-        @Suppress("UNCHECKED_CAST")
-        val customHeaders = (intent.getSerializableExtra(EXTRA_HEADERS) as? HashMap<String, String>) ?: hashMapOf()
+            val streamUrl = intent.getStringExtra(EXTRA_URL).orEmpty().trim()
+            val title = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifEmpty { "Primeflix" }
+            val serversJsonRaw = intent.getStringExtra(EXTRA_SERVERS_JSON).orEmpty()
 
-        val rootLayout = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
-        }
+            @Suppress("UNCHECKED_CAST")
+            customHeaders = (intent.getSerializableExtra(EXTRA_HEADERS) as? HashMap<String, String>) ?: hashMapOf()
 
-        playerView = PlayerView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-            useController = true
-            controllerShowTimeoutMs = 3000
-            keepScreenOn = true
-        }
+            parseServers(serversJsonRaw, title, streamUrl)
 
-        progressBar = ProgressBar(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER
-            )
-            visibility = View.VISIBLE
-        }
-
-        statusText = TextView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            ).apply {
-                topMargin = 48
+            val rootLayout = FrameLayout(this).apply {
+                setBackgroundColor(Color.BLACK)
             }
-            text = title
-            setTextColor(Color.WHITE)
-            textSize = 14f
-            setBackgroundColor(Color.parseColor("#88000000"))
-            setPadding(24, 10, 24, 10)
+
+            playerView = PlayerView(this).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+                useController = true
+                controllerShowTimeoutMs = 4000
+                keepScreenOn = true
+            }
+
+            progressBar = ProgressBar(this).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.CENTER
+                )
+                visibility = View.VISIBLE
+            }
+
+            statusText = TextView(this).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                ).apply {
+                    topMargin = 48
+                }
+                text = title
+                setTextColor(Color.WHITE)
+                textSize = 14f
+                setBackgroundColor(Color.parseColor("#88000000"))
+                setPadding(24, 10, 24, 10)
+            }
+
+            serversButton = Button(this).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.END
+                ).apply {
+                    topMargin = 36
+                    rightMargin = 36
+                }
+                text = if (serverList.isNotEmpty()) "SERVERS (${serverList.size})" else "SERVERS"
+                setTextColor(Color.WHITE)
+                textSize = 12f
+                setBackgroundColor(Color.parseColor("#CC0072D2"))
+                setOnClickListener { showServersDialog() }
+            }
+
+            rootLayout.addView(playerView)
+            rootLayout.addView(progressBar)
+            rootLayout.addView(statusText)
+            rootLayout.addView(serversButton)
+            setContentView(rootLayout)
+
+            val initialUrl = if (streamUrl.isNotEmpty()) {
+                streamUrl
+            } else if (serverList.isNotEmpty()) {
+                serverList.first().url
+            } else {
+                ""
+            }
+
+            if (initialUrl.isNotEmpty()) {
+                initializePlayer(initialUrl, customHeaders)
+            } else {
+                progressBar.visibility = View.GONE
+                statusText.visibility = View.VISIBLE
+                statusText.text = "Stream URL nahi mila — SERVERS button दबाएं"
+            }
+        } catch (e: Exception) {
+            finish()
         }
+    }
 
-        rootLayout.addView(playerView)
-        rootLayout.addView(progressBar)
-        rootLayout.addView(statusText)
-        setContentView(rootLayout)
+    private fun parseServers(jsonStr: String, fallbackTitle: String, fallbackUrl: String) {
+        serverList.clear()
+        if (jsonStr.isNotEmpty()) {
+            try {
+                val arr = JSONArray(jsonStr)
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val u = obj.optString("url", "").trim()
+                    if (u.isEmpty()) continue
+                    val sTitle = obj.optString("title", fallbackTitle).ifEmpty { fallbackTitle }
+                    val sName = obj.optString("server", "Server ${i + 1}").ifEmpty { "Server ${i + 1}" }
+                    val isHin = obj.optBoolean("isHindi", false)
+                    serverList.add(ServerEntry(sTitle, sName, u, isHin))
+                }
+            } catch (_: Exception) {}
+        }
+        if (serverList.isEmpty() && fallbackUrl.isNotEmpty()) {
+            serverList.add(ServerEntry(fallbackTitle, "Current Server", fallbackUrl, false))
+        }
+    }
 
-        initializePlayer(streamUrl, customHeaders)
+    private fun showServersDialog() {
+        try {
+            if (serverList.isEmpty()) {
+                AlertDialog.Builder(this)
+                    .setTitle("Servers")
+                    .setMessage("कोई सर्वर लिंक उपलब्ध नहीं है।")
+                    .setPositiveButton("OK", null)
+                    .show()
+                return
+            }
+
+            val labels = serverList.mapIndexed { idx, s ->
+                val hindiTag = if (s.isHindi) " [HINDI]" else ""
+                "${idx + 1}. ${s.server}$hindiTag — ${s.title}\n${s.url}"
+            }.toTypedArray()
+
+            AlertDialog.Builder(this)
+                .setTitle("Select Server & Link")
+                .setItems(labels) { dialog, which ->
+                    val chosen = serverList.getOrNull(which) ?: return@setItems
+                    dialog.dismiss()
+                    statusText.text = "${chosen.server}: ${chosen.title}"
+                    statusText.visibility = View.VISIBLE
+                    initializePlayer(chosen.url, customHeaders)
+                }
+                .setNegativeButton("Close", null)
+                .show()
+        } catch (_: Exception) {}
     }
 
     private fun initializePlayer(url: String, headers: Map<String, String>) {
-        val httpFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent(
-                headers["User-Agent"]
-                    ?: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
-            .setAllowCrossProtocolRedirects(true)
+        try {
+            releasePlayer()
+            progressBar.visibility = View.VISIBLE
 
-        val requestHeaders = HashMap(headers).apply {
-            remove("User-Agent")
-        }
-        if (requestHeaders.isNotEmpty()) {
-            httpFactory.setDefaultRequestProperties(requestHeaders)
-        }
+            val httpFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent(
+                    headers["User-Agent"]
+                        ?: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
+                .setAllowCrossProtocolRedirects(true)
 
-        val mediaSourceFactory = DefaultMediaSourceFactory(this)
-            .setDataSourceFactory(httpFactory)
+            val requestHeaders = HashMap(headers).apply {
+                remove("User-Agent")
+            }
+            if (requestHeaders.isNotEmpty()) {
+                httpFactory.setDefaultRequestProperties(requestHeaders)
+            }
 
-        val exoPlayer = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .build()
+            val mediaSourceFactory = DefaultMediaSourceFactory(this)
+                .setDataSourceFactory(httpFactory)
 
-        player = exoPlayer
-        playerView.player = exoPlayer
+            val exoPlayer = ExoPlayer.Builder(this)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .build()
 
-        exoPlayer.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                when (playbackState) {
-                    Player.STATE_BUFFERING -> progressBar.visibility = View.VISIBLE
-                    Player.STATE_READY -> {
-                        progressBar.visibility = View.GONE
-                        statusText.postDelayed({ statusText.visibility = View.GONE }, 2500)
+            player = exoPlayer
+            playerView.player = exoPlayer
+
+            exoPlayer.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    when (playbackState) {
+                        Player.STATE_BUFFERING -> progressBar.visibility = View.VISIBLE
+                        Player.STATE_READY -> {
+                            progressBar.visibility = View.GONE
+                            statusText.postDelayed({ statusText.visibility = View.GONE }, 2500)
+                        }
+                        Player.STATE_ENDED, Player.STATE_IDLE -> progressBar.visibility = View.GONE
                     }
-                    Player.STATE_ENDED, Player.STATE_IDLE -> progressBar.visibility = View.GONE
                 }
-            }
 
-            override fun onPlayerError(error: PlaybackException) {
-                progressBar.visibility = View.GONE
-                statusText.visibility = View.VISIBLE
-                statusText.text = "Playback Error: ${error.errorCodeName}"
-            }
-        })
+                override fun onPlayerError(error: PlaybackException) {
+                    progressBar.visibility = View.GONE
+                    statusText.visibility = View.VISIBLE
+                    statusText.text = "Playback Error: ${error.errorCodeName}"
+                }
+            })
 
-        val mediaItem = MediaItem.fromUri(url)
-        exoPlayer.setMediaItem(mediaItem)
-        exoPlayer.prepare()
-        exoPlayer.playWhenReady = true
+            val mediaItem = MediaItem.fromUri(url)
+            exoPlayer.setMediaItem(mediaItem)
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+        } catch (e: Exception) {
+            progressBar.visibility = View.GONE
+            statusText.visibility = View.VISIBLE
+            statusText.text = "Player Error: ${e.localizedMessage ?: "Unable to play"}"
+        }
     }
 
     private fun seekBy(seconds: Long) {
@@ -246,9 +360,13 @@ class Media3PlayerActivity : AppCompatActivity() {
     }
 
     private fun releasePlayer() {
-        statusText.removeCallbacks(hideBannerRunnable)
-        player?.release()
-        player = null
+        try {
+            if (::statusText.isInitialized) {
+                statusText.removeCallbacks(hideBannerRunnable)
+            }
+            player?.release()
+            player = null
+        } catch (_: Exception) {}
     }
 
     override fun onStop() {

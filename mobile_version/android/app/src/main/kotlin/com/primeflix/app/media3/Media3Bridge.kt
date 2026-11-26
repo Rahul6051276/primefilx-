@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Intent
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import org.json.JSONArray
+import org.json.JSONObject
 
 object Media3Bridge {
     private const val CHANNEL_NAME = "com.primeflix/media3"
@@ -13,9 +15,9 @@ object Media3Bridge {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "playMedia" -> {
-                        val url = (call.argument("url") as? String)?.trim() ?: ""
-                        val title = (call.argument("title") as? String) ?: "Primeflix"
-                        val rawHeaders = call.argument("headers") as? Map<*, *>
+                        val url = (call.argument<String>("url"))?.trim() ?: ""
+                        val title = (call.argument<String>("title"))?.trim().orEmpty().ifEmpty { "Primeflix" }
+                        val rawHeaders = call.argument>("headers")
                         val headers = HashMap<String, String>()
                         rawHeaders?.forEach { (k, v) ->
                             if (k != null && v != null) {
@@ -23,16 +25,41 @@ object Media3Bridge {
                             }
                         }
 
-                        if (url.isEmpty()) {
+                        val rawServers = call.argument<List<*>>("servers")
+                        val serversJson = JSONArray()
+                        rawServers?.forEach { entry ->
+                            if (entry is Map<*, *>) {
+                                val obj = JSONObject()
+                                val sUrl = entry["url"]?.toString()?.trim().orEmpty()
+                                if (sUrl.isNotEmpty()) {
+                                    obj.put("title", entry["title"]?.toString() ?: title)
+                                    obj.put("server", entry["server"]?.toString() ?: "Server")
+                                    obj.put("url", sUrl)
+                                    obj.put("isHindi", entry["isHindi"] == true)
+                                    serversJson.put(obj)
+                                }
+                            }
+                        }
+
+                        val resolvedUrl = if (url.isNotEmpty()) {
+                            url
+                        } else if (serversJson.length() > 0) {
+                            serversJson.optJSONObject(0)?.optString("url", "") ?: ""
+                        } else {
+                            ""
+                        }
+
+                        if (resolvedUrl.isEmpty()) {
                             result.error("INVALID_URL", "Stream URL is empty", null)
                             return@setMethodCallHandler
                         }
 
                         try {
                             val intent = Intent(activity, Media3PlayerActivity::class.java).apply {
-                                putExtra(Media3PlayerActivity.EXTRA_URL, url)
+                                putExtra(Media3PlayerActivity.EXTRA_URL, resolvedUrl)
                                 putExtra(Media3PlayerActivity.EXTRA_TITLE, title)
                                 putExtra(Media3PlayerActivity.EXTRA_HEADERS, headers)
+                                putExtra(Media3PlayerActivity.EXTRA_SERVERS_JSON, serversJson.toString())
                             }
                             activity.startActivity(intent)
                             result.success(true)

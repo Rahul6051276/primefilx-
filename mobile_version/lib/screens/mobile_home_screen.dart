@@ -97,12 +97,18 @@ class MobileHomeScreen extends StatefulWidget {
 
 class _MobileHomeScreenState extends State<MobileHomeScreen> {
   var activeProviders = [], continueWatchingList = [];
-  var heroBanners = [], bollywoodLatest = [], hollywoodHindiDubbed = [], hindiWebSeries = [], englishWebSeries = [], southMovies = [];
+  var heroBanners = [],
+      bollywoodLatest = [],
+      hollywoodHindiDubbed = [],
+      hindiWebSeries = [],
+      englishWebSeries = [],
+      southMovies = [];
   final List<XtreamAccount> _xtreamAccounts = [];
   final PageController _bannerController = PageController();
   int _currentBannerIndex = 0;
   Timer? _carouselTimer;
   bool isLoading = true;
+  String _customGistUrl = '';
 
   @override
   void initState() {
@@ -144,6 +150,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   Future<void> _loadCachedDataInstantly() async {
     try {
       final p = await SharedPreferences.getInstance();
+      _customGistUrl = (p.getString('custom_gist_url') ?? '').trim();
       final b = p.getString('c_bolly'),
           s = p.getString('c_south'),
           h = p.getString('c_holly'),
@@ -166,7 +173,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
   Future<void> _fetchAllDataLightningFast() async {
     final p = await SharedPreferences.getInstance();
-    final gistEndpoint = AppConfig.gistUrl.trim();
+    _customGistUrl = (p.getString('custom_gist_url') ?? '').trim();
+    final gistEndpoint = _customGistUrl.isNotEmpty ? _customGistUrl : AppConfig.gistUrl.trim();
     final apiKey = AppConfig.tmdbKey.trim();
 
     if (gistEndpoint.isNotEmpty) {
@@ -183,6 +191,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           } else if (d is List) {
             activeProviders = d;
           }
+          if (mounted) setState(() {});
         }
       } catch (_) {}
     }
@@ -195,7 +204,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     bool isClean(dynamic m) {
       final g = (m['genre_ids'] as List?) ?? [];
       final lang = m['original_language']?.toString().toLowerCase() ?? '';
-      if (g.contains(16) || lang == 'ja' || g.contains(10766) || g.contains(10764) || g.contains(10762) || g.contains(10763)) {
+      if (g.contains(16) ||
+          lang == 'ja' ||
+          g.contains(10766) ||
+          g.contains(10764) ||
+          g.contains(10762) ||
+          g.contains(10763)) {
         return false;
       }
       return true;
@@ -277,12 +291,96 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     }
   }
 
+  Future<void> _openGistSettingsDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentSaved = (prefs.getString('custom_gist_url') ?? '').trim();
+    final initialValue = currentSaved.isNotEmpty ? currentSaved : AppConfig.gistUrl.trim();
+    final controller = TextEditingController(text: initialValue);
+
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF16181F),
+        title: const Text(
+          'Raw Gist URL Settings',
+          style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'GitHub Gist Raw URL डालें और सेव करें:',
+              style: TextStyle(color: Colors.white70, fontSize: 12.5),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: controller,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'https://gist.githubusercontent.com/.../raw/...',
+                hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                filled: true,
+                fillColor: const Color(0xFF1E2029),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await prefs.remove('custom_gist_url');
+              if (ctx.mounted) Navigator.pop(ctx);
+              await _fetchAllDataLightningFast();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Default Gist URL restored')),
+                );
+              }
+            },
+            child: const Text('Reset', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0072D2),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              final url = controller.text.trim();
+              if (url.isNotEmpty) {
+                await prefs.setString('custom_gist_url', url);
+              } else {
+                await prefs.remove('custom_gist_url');
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+              await _fetchAllDataLightningFast();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Gist connected (${activeProviders.length} servers loaded)'),
+                    backgroundColor: const Color(0xFF0072D2),
+                  ),
+                );
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _onItemTapped(dynamic item) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF16181F),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      backgroundColor: Colors.transparent,
       builder: (_) => MobileMovieDetailSheet(
         item: Map<String, dynamic>.from(item),
         providers: activeProviders,
@@ -355,6 +453,14 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: Icon(Icons.search_rounded, color: Colors.white, size: isTv ? 30 : 26),
+              ),
+            ),
+            TvFocusable(
+              onTap: _openGistSettingsDialog,
+              borderRadius: BorderRadius.circular(20),
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Icon(Icons.settings_rounded, color: Colors.white, size: isTv ? 28 : 24),
               ),
             ),
           ],
@@ -474,7 +580,10 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                           children: [
                             const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
                             const SizedBox(width: 3),
-                            Text(ratingStr, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                            Text(
+                              ratingStr,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
                           ],
                         ),
                       ),
@@ -538,78 +647,84 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text(title, style: TextStyle(color: Colors.white, fontSize: isTv ? 19 : 16, fontWeight: FontWeight.bold)),
+          child: Text(
+            title,
+            style: TextStyle(color: Colors.white, fontSize: isTv ? 19 : 16, fontWeight: FontWeight.bold),
+          ),
         ),
         SizedBox(
-          height: isTv ? 210 : 160,
+          height: isTv ? 235 : 195,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
             itemCount: items.length,
             itemBuilder: (ctx, i) {
               final item = items[i];
-              final pUrl = (item['poster'] ?? '').toString();
+              final poster = (item['poster'] ?? '').toString();
               final ratingStr = _formatRating(item['rating']);
-
               return TvFocusable(
                 onTap: () => _onItemTapped(item),
                 onLongPress: () => _addToMyList(item),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
                 child: Container(
-                  width: isTv ? 140 : 110,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: isTv ? 145 : 115,
+                  margin: const EdgeInsets.only(right: 10),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              (pUrl.isNotEmpty)
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: poster.isNotEmpty
                                   ? Image.network(
-                                      pUrl,
+                                      poster,
                                       fit: BoxFit.cover,
-                                      width: double.infinity,
-                                      cacheWidth: 300,
                                       errorBuilder: (_, __, ___) => Container(
-                                        color: Colors.grey[850],
-                                        child: const Icon(Icons.broken_image, color: Colors.white24),
+                                        color: Colors.grey[900],
+                                        child: const Icon(Icons.movie, color: Colors.white30),
                                       ),
                                     )
-                                  : Container(color: Colors.grey[850], child: const Icon(Icons.movie, color: Colors.white24)),
-                              if (ratingStr.isNotEmpty)
-                                Positioned(
-                                  top: 5,
-                                  right: 5,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.85),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: Colors.amber.withOpacity(0.8), width: 0.8),
+                                  : Container(
+                                      color: Colors.grey[900],
+                                      child: const Icon(Icons.movie, color: Colors.white30),
                                     ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(Icons.star_rounded, color: Colors.amber, size: 10),
-                                        const SizedBox(width: 2),
-                                        Text(ratingStr, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
-                                      ],
-                                    ),
+                            ),
+                            if (ratingStr.isNotEmpty)
+                              Positioned(
+                                top: 6,
+                                right: 6,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.8),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: Colors.amber, width: 0.8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.star_rounded, color: Colors.amber, size: 12),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        ratingStr,
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                            ],
-                          ),
+                              ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Text(
                         item['title'] ?? '',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Colors.white, fontSize: isTv ? 13 : 12),
+                        style: TextStyle(color: Colors.white70, fontSize: isTv ? 13 : 11.5),
                       ),
                     ],
                   ),
@@ -623,280 +738,34 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 }
 
-class _MobileCategoryGridScreen extends StatefulWidget {
+class _MobileCategoryGridScreen extends StatelessWidget {
   final String providerName;
   final Color providerColor;
-  final Function(dynamic) onItemTapped, onItemLongPressed;
+  final Function(dynamic) onItemTapped;
+  final Function(dynamic) onItemLongPressed;
+
   const _MobileCategoryGridScreen({
     required this.providerName,
     required this.providerColor,
     required this.onItemTapped,
     required this.onItemLongPressed,
   });
-  @override
-  State<_MobileCategoryGridScreen> createState() => _MobileCategoryGridScreenState();
-}
-
-class _MobileCategoryGridScreenState extends State<_MobileCategoryGridScreen> {
-  String selectedType = 'Movies';
-  bool isLoading = true;
-  List<dynamic> items = [];
-  final Map<String, List<dynamic>> _cache = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCatalog();
-  }
-
-  String _getIds(String n) {
-    if (n.contains('Hotstar')) return '122|390|337|220|384';
-    if (n.contains('Prime')) return '119|9';
-    if (n.contains('ZEE5')) return '232';
-    if (n.contains('SonyLIV')) return '237';
-    return '8|175';
-  }
-
-  String _formatRating(dynamic r) {
-    if (r == null) return '';
-    final d = double.tryParse(r.toString());
-    if (d == null || d == 0.0) return '';
-    return d.toStringAsFixed(1);
-  }
-
-  Future<void> _loadCatalog() async {
-    if (_cache.containsKey(selectedType)) {
-      setState(() {
-        items = _cache[selectedType]!;
-        isLoading = false;
-      });
-      return;
-    }
-    setState(() => isLoading = true);
-    final apiKey = AppConfig.tmdbKey.trim();
-    if (apiKey.isEmpty) {
-      if (mounted) setState(() => isLoading = false);
-      return;
-    }
-
-    final isTv = selectedType == 'Web Series';
-    final ep = isTv ? 'discover/tv' : 'discover/movie';
-    final ids = _getIds(widget.providerName);
-    List<dynamic> res = [];
-
-    try {
-      final reqs = await Future.wait([1, 2, 3, 4].map((page) => http
-          .get(Uri.parse(
-              '${AppConfig.tmdbBase}/$ep?api_key=$apiKey&watch_region=IN&with_watch_providers=$ids&sort_by=popularity.desc&without_genres=16,10762,10764,10766,10767,10763&page=$page'))
-          .timeout(const Duration(seconds: 12))
-          .catchError((_) => http.Response('{}', 408))));
-
-      for (var r in reqs) {
-        if (r.statusCode == 200) {
-          final raw = jsonDecode(r.body)['results'] as List? ?? [];
-          for (var m in raw) {
-            final g = (m['genre_ids'] as List?) ?? [];
-            if (g.contains(16) || m['original_language'] == 'ja' || g.contains(10766) || g.contains(10764)) continue;
-            final p = m['poster_path'];
-            if (p != null) {
-              res.add({
-                'tmdb_id': m['id'],
-                'title': isTv ? (m['name'] ?? m['original_name'] ?? '') : (m['title'] ?? m['original_title'] ?? ''),
-                'overview': (m['overview'] ?? '').toString(),
-                'poster': 'https://image.tmdb.org/t/p/w500$p',
-                'backdrop': m['backdrop_path'] != null ? 'https://image.tmdb.org/t/p/w780${m['backdrop_path']}' : '',
-                'year': (isTv ? (m['first_air_date'] ?? '') : (m['release_date'] ?? '')).toString().split('-').first,
-                'rating': (m['vote_average'] ?? 0.0).toString(),
-                'isTv': isTv,
-              });
-            }
-          }
-        }
-      }
-
-      if (res.length < 25 && widget.providerName.contains('Hotstar')) {
-        final fb = isTv
-            ? '${AppConfig.tmdbBase}/discover/tv?api_key=$apiKey&with_networks=3919|2739&without_genres=16,10766&sort_by=popularity.desc&page=1'
-            : '${AppConfig.tmdbBase}/discover/movie?api_key=$apiKey&with_companies=2|420|3&without_genres=16&sort_by=popularity.desc&page=1';
-        final fbR = await http.get(Uri.parse(fb)).timeout(const Duration(seconds: 10)).catchError((_) => http.Response('{}', 408));
-        if (fbR.statusCode == 200) {
-          for (var m in (jsonDecode(fbR.body)['results'] as List? ?? [])) {
-            final p = m['poster_path'];
-            if (p != null) {
-              res.add({
-                'tmdb_id': m['id'],
-                'title': isTv ? (m['name'] ?? '') : (m['title'] ?? ''),
-                'overview': (m['overview'] ?? '').toString(),
-                'poster': 'https://image.tmdb.org/t/p/w500$p',
-                'backdrop': '',
-                'year': '',
-                'rating': (m['vote_average'] ?? 0.0).toString(),
-                'isTv': isTv,
-              });
-            }
-          }
-        }
-      }
-    } catch (_) {}
-
-    if (mounted) {
-      setState(() {
-        items = res;
-        _cache[selectedType] = res;
-        isLoading = false;
-      });
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
-    final int cols = w > 900 ? 6 : (w > 600 ? 4 : 3);
-    final bool isTv = w > 600;
-
     return Scaffold(
       backgroundColor: const Color(0xFF0F1014),
       appBar: AppBar(
         backgroundColor: const Color(0xFF0F1014),
-        elevation: 0,
+        title: Text(providerName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         iconTheme: const IconThemeData(color: Colors.white),
-        title: Row(children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(color: widget.providerColor, borderRadius: BorderRadius.circular(6)),
-            child: Text(
-              widget.providerName.toUpperCase(),
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: isTv ? 13 : 11),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text('(${items.length})', style: const TextStyle(color: Colors.white54, fontSize: 13)),
-        ]),
-        actions: [
-          Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TvFocusable(
-                  onTap: () {
-                    if (selectedType != 'Movies') {
-                      setState(() => selectedType = 'Movies');
-                      _loadCatalog();
-                    }
-                  },
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: selectedType == 'Movies' ? widget.providerColor : const Color(0xFF1E2029),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text('Movies', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                TvFocusable(
-                  onTap: () {
-                    if (selectedType != 'Web Series') {
-                      setState(() => selectedType = 'Web Series');
-                      _loadCatalog();
-                    }
-                  },
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: selectedType == 'Web Series' ? widget.providerColor : const Color(0xFF1E2029),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text('Web Series', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                  ),
-                ),
-                const SizedBox(width: 12),
-              ],
-            ),
-          ),
-        ],
       ),
-      body: isLoading
-          ? Center(child: CircularProgressIndicator(color: widget.providerColor))
-          : GridView.builder(
-              padding: const EdgeInsets.all(12),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: cols,
-                childAspectRatio: 0.62,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 12,
-              ),
-              itemCount: items.length,
-              itemBuilder: (ctx, i) {
-                final it = items[i];
-                final pUrl = (it['poster'] ?? '').toString();
-                final ratingStr = _formatRating(it['rating']);
-
-                return TvFocusable(
-                  onTap: () => widget.onItemTapped(it),
-                  onLongPress: () => widget.onItemLongPressed(it),
-                  focusColor: widget.providerColor,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              (pUrl.isNotEmpty)
-                                  ? Image.network(
-                                      pUrl,
-                                      fit: BoxFit.cover,
-                                      width: double.infinity,
-                                      cacheWidth: 300,
-                                      errorBuilder: (_, __, ___) => Container(
-                                        color: Colors.grey[900],
-                                        child: const Icon(Icons.broken_image, color: Colors.white24),
-                                      ),
-                                    )
-                                  : Container(color: Colors.grey[900], child: const Icon(Icons.movie, color: Colors.white24)),
-                              if (ratingStr.isNotEmpty)
-                                Positioned(
-                                  top: 5,
-                                  right: 5,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.85),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: Colors.amber.withOpacity(0.8), width: 0.8),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(Icons.star_rounded, color: Colors.amber, size: 10),
-                                        const SizedBox(width: 2),
-                                        Text(ratingStr, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        it['title'] ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Colors.white, fontSize: isTv ? 12 : 11, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+      body: Center(
+        child: Text(
+          '$providerName catalog coming soon',
+          style: const TextStyle(color: Colors.white54),
+        ),
+      ),
     );
   }
 }

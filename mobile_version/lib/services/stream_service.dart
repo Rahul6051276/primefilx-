@@ -1,40 +1,59 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'tmdb_service.dart';
 
 class MobileStreamService {
   static const String renderApiBase =
       'https://tmdb-embed-api-4.onrender.com';
 
-  // FIXED: Future<Map<String, dynamic>>
-  static Future<Map<String, dynamic>> _fetchXtreamConfig() async {
+  static Future> _fetchXtreamConfig() async {
+    String endpoint = AppConfig.gistUrl.trim();
     try {
-      final res = await http
-          .get(Uri.parse(AppConfig.gistUrl))
-          .timeout(const Duration(seconds: 5));
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-
-        return {
-          'host': (data['xc_host'] ??
-                  data['host'] ??
-                  'http://line.portal4k.love')
-              .toString()
-              .trim(),
-          'username': (data['xc_username'] ??
-                  data['username'] ??
-                  'f4:fe:fb:81:9e:e0')
-              .toString()
-              .trim(),
-          'password': (data['xc_password'] ??
-                  data['password'] ??
-                  'C9DLMNMLDR')
-              .toString()
-              .trim(),
-        };
+      final prefs = await SharedPreferences.getInstance();
+      final customUrl = (prefs.getString('custom_gist_url') ?? '').trim();
+      if (customUrl.isNotEmpty) {
+        endpoint = customUrl;
       }
     } catch (_) {}
+
+    if (endpoint.isNotEmpty) {
+      try {
+        final sep = endpoint.contains('?') ? '&' : '?';
+        final res = await http
+            .get(Uri.parse('$endpoint${sep}t=${DateTime.now().millisecondsSinceEpoch}'))
+            .timeout(const Duration(seconds: 6));
+
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          if (data is Map) {
+            String host = (data['xc_host'] ?? data['host'] ?? '').toString().trim();
+            String username = (data['xc_username'] ?? data['username'] ?? '').toString().trim();
+            String password = (data['xc_password'] ?? data['password'] ?? '').toString().trim();
+
+            final provs = data['active_providers'] ?? data['providers'];
+            if ((host.isEmpty || username.isEmpty || password.isEmpty) && provs is List) {
+              for (final p in provs) {
+                if (p is Map && (p['type'] == 'xtream' || p['xc_host'] != null)) {
+                  host = (p['xc_host'] ?? p['server'] ?? p['url'] ?? '').toString().trim();
+                  username = (p['xc_username'] ?? p['username'] ?? '').toString().trim();
+                  password = (p['xc_password'] ?? p['password'] ?? '').toString().trim();
+                  if (host.isNotEmpty && username.isNotEmpty && password.isNotEmpty) break;
+                }
+              }
+            }
+
+            if (host.isNotEmpty && username.isNotEmpty && password.isNotEmpty) {
+              return {
+                'host': host.replaceAll(RegExp(r'/+$'), ''),
+                'username': username,
+                'password': password,
+              };
+            }
+          }
+        }
+      } catch (_) {}
+    }
 
     return {
       'host': 'http://line.portal4k.love',
@@ -60,11 +79,11 @@ class MobileStreamService {
     int? season,
     int? episode,
   }) async {
-    List<dynamic> resolved = [];
+    final List<dynamic> resolved = [];
 
-    final targetTmdbId = item['tmdb_id']?.toString() ?? '';
-    final isTv = item['isTv'] == true;
-    final movieTitle = (item['title'] ?? '').toString().toLowerCase();
+    final targetTmdbId = (item['tmdb_id'] ?? item['id'] ?? '').toString().trim();
+    final isTv = item['isTv'] == true || season != null;
+    final movieTitle = (item['title'] ?? item['name'] ?? '').toString().toLowerCase();
 
     final cleanTitle =
         movieTitle.replaceAll(RegExp(r'[^a-z0-9\s]'), '').trim();
@@ -88,12 +107,12 @@ class MobileStreamService {
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body);
 
-          List streamList = [];
+          final List<dynamic> streamList = [];
 
           if (data is List) {
-            streamList = data;
-          } else if (data is Map && data['streams'] != null) {
-            streamList = data['streams'];
+            streamList.addAll(data);
+          } else if (data is Map && data['streams'] is List) {
+            streamList.addAll(data['streams']);
           } else if (data is Map) {
             data.forEach((key, value) {
               if (value is List) streamList.addAll(value);
@@ -101,7 +120,8 @@ class MobileStreamService {
           }
 
           for (var s in streamList) {
-            final sUrl = (s['url'] ?? '').toString();
+            if (s is! Map) continue;
+            final sUrl = (s['url'] ?? '').toString().trim();
 
             if (sUrl.isNotEmpty) {
               final sTitle =
@@ -129,127 +149,133 @@ class MobileStreamService {
     try {
       final config = await _fetchXtreamConfig();
 
-      final xcHost = config['host']!;
-      final xcUser = config['username']!;
-      final xcPass = config['password']!;
+      final xcHost = (config['host'] ?? '').toString().replaceAll(RegExp(r'/+$'), '');
+      final xcUser = (config['username'] ?? '').toString();
+      final xcPass = (config['password'] ?? '').toString();
 
-      if (!isTv) {
-        final vodUrl =
-            '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_vod_streams';
+      if (xcHost.isNotEmpty && xcUser.isNotEmpty && xcPass.isNotEmpty) {
+        if (!isTv) {
+          final vodUrl =
+              '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_vod_streams';
 
-        final vodRes = await http
-            .get(Uri.parse(vodUrl))
-            .timeout(const Duration(seconds: 12));
+          final vodRes = await http
+              .get(Uri.parse(vodUrl))
+              .timeout(const Duration(seconds: 12));
 
-        if (vodRes.statusCode == 200) {
-          final vodData = jsonDecode(vodRes.body);
+          if (vodRes.statusCode == 200) {
+            final vodData = jsonDecode(vodRes.body);
 
-          if (vodData is List && vodData.isNotEmpty) {
-            final matches = vodData.where((m) {
-              final name = (m['name'] ?? '').toString().toLowerCase();
+            if (vodData is List && vodData.isNotEmpty) {
+              final matches = vodData.where((m) {
+                if (m is! Map) return false;
+                final name = (m['name'] ?? '').toString().toLowerCase();
 
-              final cleanNameReplaced =
-                  name.replaceAll(RegExp(r'[^a-z0-9\s]'), '');
+                final cleanNameReplaced =
+                    name.replaceAll(RegExp(r'[^a-z0-9\s]'), '').trim();
 
-              if (cleanTitle.isEmpty) return false;
+                if (cleanTitle.isEmpty) return false;
 
-              return cleanNameReplaced.contains(cleanTitle) ||
-                  cleanTitle.contains(cleanNameReplaced);
-            }).toList();
+                return cleanNameReplaced.contains(cleanTitle) ||
+                    cleanTitle.contains(cleanNameReplaced);
+              }).toList();
 
-            for (var matched in matches) {
-              final streamId = matched['stream_id'];
-              final container = matched['container_extension'] ?? 'mp4';
-              final rawName = matched['name'] ?? 'Xtream Movie';
+              for (var matched in matches) {
+                final streamId = matched['stream_id'];
+                final container = matched['container_extension'] ?? 'mp4';
+                final rawName = matched['name'] ?? 'Xtream Movie';
 
-              final streamUrl =
-                  '$xcHost/movie/$xcUser/$xcPass/$streamId.$container';
+                final streamUrl =
+                    '$xcHost/movie/$xcUser/$xcPass/$streamId.$container';
 
-              final isHindi = isHindiStream(rawName.toString());
+                final isHindi = isHindiStream(rawName.toString());
 
-              resolved.add({
-                'server': 'Xtream - IPTV',
-                'title': isHindi
-                    ? '🎬 $rawName [Hindi Dubbed]'
-                    : '🎬 $rawName [Original]',
-                'url': streamUrl,
-                'isHindi': isHindi,
-              });
+                resolved.add({
+                  'server': 'Xtream - IPTV',
+                  'title': isHindi
+                      ? '🎬 $rawName [Hindi Dubbed]'
+                      : '🎬 $rawName [Original]',
+                  'url': streamUrl,
+                  'isHindi': isHindi,
+                });
+              }
             }
           }
-        }
-      } else {
-        // Series handling
-        final seriesUrl =
-            '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_series';
+        } else {
+          final seriesUrl =
+              '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_series';
 
-        final seriesRes = await http
-            .get(Uri.parse(seriesUrl))
-            .timeout(const Duration(seconds: 10));
+          final seriesRes = await http
+              .get(Uri.parse(seriesUrl))
+              .timeout(const Duration(seconds: 10));
 
-        if (seriesRes.statusCode == 200) {
-          final seriesJson = jsonDecode(seriesRes.body);
+          if (seriesRes.statusCode == 200) {
+            final seriesJson = jsonDecode(seriesRes.body);
 
-          if (seriesJson is List) {
-            final matchedSeries = seriesJson.firstWhere(
-              (s) => (s['name'] ?? '')
-                  .toString()
-                  .toLowerCase()
-                  .contains(cleanTitle),
-              orElse: () => null,
-            );
+            if (seriesJson is List) {
+              dynamic matchedSeries;
+              for (final s in seriesJson) {
+                if (s is Map &&
+                    cleanTitle.isNotEmpty &&
+                    (s['name'] ?? '').toString().toLowerCase().contains(cleanTitle)) {
+                  matchedSeries = s;
+                  break;
+                }
+              }
 
-            if (matchedSeries != null) {
-              final seriesId = matchedSeries['series_id'];
+              if (matchedSeries != null) {
+                final seriesId = matchedSeries['series_id'];
 
-              final infoUrl =
-                  '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_series_info&series_id=$seriesId';
+                final infoUrl =
+                    '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_series_info&series_id=$seriesId';
 
-              final infoRes = await http
-                  .get(Uri.parse(infoUrl))
-                  .timeout(const Duration(seconds: 10));
+                final infoRes = await http
+                    .get(Uri.parse(infoUrl))
+                    .timeout(const Duration(seconds: 10));
 
-              if (infoRes.statusCode == 200) {
-                final infoData = jsonDecode(infoRes.body);
+                if (infoRes.statusCode == 200) {
+                  final infoData = jsonDecode(infoRes.body);
 
-                if (infoData != null && infoData['episodes'] != null) {
-                  final episodesMap = infoData['episodes'];
+                  if (infoData is Map && infoData['episodes'] != null) {
+                    final episodesMap = infoData['episodes'];
 
-                  final seasonEpisodes =
-                      episodesMap[targetSeason.toString()];
+                    final seasonEpisodes =
+                        episodesMap is Map ? episodesMap[targetSeason.toString()] : null;
 
-                  if (seasonEpisodes is List) {
-                    final targetEp = seasonEpisodes.firstWhere(
-                      (e) =>
-                          e['episode_num'].toString() ==
-                          targetEpisode.toString(),
-                      orElse: () => null,
-                    );
+                    if (seasonEpisodes is List) {
+                      dynamic targetEp;
+                      for (final e in seasonEpisodes) {
+                        if (e is Map &&
+                            e['episode_num'].toString() == targetEpisode.toString()) {
+                          targetEp = e;
+                          break;
+                        }
+                      }
 
-                    if (targetEp != null) {
-                      final epId = targetEp['id'];
+                      if (targetEp != null) {
+                        final epId = targetEp['id'];
 
-                      final container =
-                          targetEp['container_extension'] ?? 'mp4';
+                        final container =
+                            targetEp['container_extension'] ?? 'mp4';
 
-                      final epTitle =
-                          targetEp['title'] ?? 'S${targetSeason}E$targetEpisode';
+                        final epTitle =
+                            targetEp['title'] ?? 'S${targetSeason}E$targetEpisode';
 
-                      final epUrl =
-                          '$xcHost/series/$xcUser/$xcPass/$epId.$container';
+                        final epUrl =
+                            '$xcHost/series/$xcUser/$xcPass/$epId.$container';
 
-                      final isHindi = isHindiStream(epTitle.toString()) ||
-                          isHindiStream(
-                              matchedSeries['name']?.toString() ?? '');
+                        final isHindi = isHindiStream(epTitle.toString()) ||
+                            isHindiStream(
+                                matchedSeries['name']?.toString() ?? '');
 
-                      resolved.add({
-                        'server': 'Xtream - IPTV Series',
-                        'title': isHindi
-                            ? '📺 $epTitle [Hindi Dubbed]'
-                            : '📺 $epTitle [Original]',
-                        'url': epUrl,
-                        'isHindi': isHindi,
-                      });
+                        resolved.add({
+                          'server': 'Xtream - IPTV Series',
+                          'title': isHindi
+                              ? '📺 $epTitle [Hindi Dubbed]'
+                              : '📺 $epTitle [Original]',
+                          'url': epUrl,
+                          'isHindi': isHindi,
+                        });
+                      }
                     }
                   }
                 }
@@ -261,7 +287,7 @@ class MobileStreamService {
     } catch (_) {}
 
     // Fallback if empty
-    if (resolved.isEmpty) {
+    if (resolved.isEmpty && targetTmdbId.isNotEmpty) {
       resolved.add({
         'server': 'Render Cloud Server',
         'title': '$movieTitle (Official Stream)',

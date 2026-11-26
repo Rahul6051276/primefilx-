@@ -32,29 +32,80 @@ class MobileMovieDetailSheet extends StatefulWidget {
 class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
   String _overview = '';
   bool _isLaunching = false;
+  late int _selectedSeason;
+  late int _selectedEpisode;
+  int _totalSeasons = 5;
+  int _totalEpisodes = 12;
+
+  bool get _isSeries =>
+      widget.season != null ||
+      widget.item['isTv'] == true ||
+      (widget.item['media_type']?.toString().toLowerCase() == 'tv') ||
+      (widget.item['type']?.toString().toLowerCase() == 'series') ||
+      (widget.item['type']?.toString().toLowerCase() == 'tv');
 
   @override
   void initState() {
     super.initState();
+    _selectedSeason = widget.season ?? 1;
+    _selectedEpisode = widget.episode ?? 1;
     _overview = (widget.item['overview'] ?? '').toString().trim();
-    if (_overview.isEmpty) {
-      _fetchStorylineIfNeeded();
+    if (_overview.isEmpty || _isSeries) {
+      _fetchSeriesAndStorylineDetails();
     }
   }
 
-  Future<void> _fetchStorylineIfNeeded() async {
+  Future<void> _fetchSeriesAndStorylineDetails() async {
     final tmdbId = (widget.item['tmdb_id'] ?? widget.item['id'] ?? '').toString().trim();
     if (tmdbId.isEmpty || AppConfig.tmdbKey.isEmpty) return;
-    final bool isTv = widget.season != null || widget.item['isTv'] == true;
-    final pathType = isTv ? 'tv' : 'movie';
+
+    final pathType = _isSeries ? 'tv' : 'movie';
     try {
       final uri = Uri.parse('${AppConfig.tmdbBase}/$pathType/$tmdbId?api_key=${AppConfig.tmdbKey}');
       final res = await http.get(uri).timeout(const Duration(seconds: 6));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final text = (data['overview'] ?? '').toString().trim();
-        if (text.isNotEmpty && mounted) {
-          setState(() => _overview = text);
+        final seasonsList = data['seasons'];
+        int sCount = _totalSeasons;
+        if (seasonsList is List && seasonsList.isNotEmpty) {
+          final validSeasons = seasonsList
+              .where((s) => s is Map && ((s['season_number'] ?? 0) as int) > 0)
+              .toList();
+          if (validSeasons.isNotEmpty) {
+            sCount = validSeasons.length.clamp(1, 20);
+          }
+        }
+        if (mounted) {
+          setState(() {
+            if (text.isNotEmpty && _overview.isEmpty) _overview = text;
+            _totalSeasons = sCount;
+          });
+        }
+        if (_isSeries) {
+          await _fetchSeasonEpisodeCount(tmdbId, _selectedSeason);
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _fetchSeasonEpisodeCount(String tmdbId, int seasonNum) async {
+    if (tmdbId.isEmpty || AppConfig.tmdbKey.isEmpty) return;
+    try {
+      final uri = Uri.parse(
+        '${AppConfig.tmdbBase}/tv/$tmdbId/season/$seasonNum?api_key=${AppConfig.tmdbKey}',
+      );
+      final res = await http.get(uri).timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final eps = data['episodes'];
+        if (eps is List && eps.isNotEmpty && mounted) {
+          setState(() {
+            _totalEpisodes = eps.length.clamp(1, 50);
+            if (_selectedEpisode > _totalEpisodes) {
+              _selectedEpisode = 1;
+            }
+          });
         }
       }
     } catch (_) {}
@@ -76,7 +127,7 @@ class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
           'backdrop': widget.item['backdrop'] ?? '',
           'year': widget.item['year'] ?? '',
           'rating': widget.item['rating'] ?? '8.0',
-          'isTv': widget.item['isTv'] ?? false,
+          'isTv': _isSeries,
         });
         if (c.length > 15) c = c.sublist(0, 15);
         await p.setString('continue_watching_mobile', jsonEncode(c));
@@ -95,6 +146,44 @@ class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
     return '';
   }
 
+  Future<List<dynamic>> _collectAvailableServers(int sNum, int eNum) async {
+    final collected = <dynamic>[];
+    final directUrl = (widget.item['url'] ?? '').toString().trim();
+    final baseTitle = (widget.item['title'] ?? widget.item['name'] ?? 'Primeflix').toString().trim();
+
+    if (directUrl.isNotEmpty) {
+      collected.add({
+        'title': baseTitle,
+        'server': 'Direct Server',
+        'url': directUrl,
+        'isHindi': false,
+      });
+    }
+
+    try {
+      final cloudList = await MobileStreamService.getDirectStreams(
+        item: widget.item,
+        providers: widget.providers,
+        season: _isSeries ? sNum : widget.season,
+        episode: _isSeries ? eNum : widget.episode,
+      );
+      if (cloudList is List) {
+        for (final entry in cloudList) {
+          if (entry is Map && (entry['url'] ?? '').toString().trim().isNotEmpty) {
+            collected.add({
+              'title': (entry['title'] ?? baseTitle).toString(),
+              'server': (entry['server'] ?? 'Server').toString(),
+              'url': entry['url'].toString().trim(),
+              'isHindi': entry['isHindi'] == true,
+            });
+          }
+        }
+      }
+    } catch (_) {}
+
+    return collected;
+  }
+
   Future<void> _onWatchNowPressed() async {
     if (_isLaunching) return;
     setState(() => _isLaunching = true);
@@ -103,24 +192,26 @@ class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
     if (!mounted) return;
 
     final tmdbId = (widget.item['tmdb_id'] ?? widget.item['id'] ?? '').toString().trim();
-    final bool isTv = widget.season != null || widget.item['isTv'] == true;
-    final int sNum = widget.season ?? 1;
-    final int eNum = widget.episode ?? 1;
+    final int sNum = _isSeries ? _selectedSeason : 1;
+    final int eNum = _isSeries ? _selectedEpisode : 1;
     final String baseTitle = (widget.item['title'] ?? widget.item['name'] ?? 'Primeflix').toString().trim();
-    final String displayTitle = widget.season != null ? '$baseTitle (S$sNum E$eNum)' : baseTitle;
-    final String directUrl = (widget.item['url'] ?? '').toString().trim();
+    final String displayTitle = _isSeries ? '$baseTitle (S$sNum E$eNum)' : baseTitle;
     final String gistUrl = _resolveGistUrl();
+
+    final serversList = await _collectAvailableServers(sNum, eNum);
+    final String primaryUrl = serversList.isNotEmpty ? (serversList.first['url'] ?? '').toString().trim() : '';
 
     try {
       final openedNative = await _kMedia3PlayerChannel.invokeMethod<bool>('playMedia', {
-        'url': directUrl,
+        'url': primaryUrl,
         'title': displayTitle,
         'tmdbId': tmdbId,
         'tmdbKey': AppConfig.tmdbKey,
         'gistUrl': gistUrl,
-        'isTv': isTv,
+        'isTv': _isSeries,
         'season': sNum,
         'episode': eNum,
+        'servers': serversList,
         'userAgent': 'VLC/3.0.18 LibVLC/3.0.18 (Linux; Android 13)',
       });
 
@@ -131,44 +222,39 @@ class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
       }
     } catch (_) {}
 
-    String resolvedUrl = directUrl;
-    if (resolvedUrl.isEmpty) {
-      try {
-        final list = await MobileStreamService.getDirectStreams(
-          item: widget.item,
-          providers: widget.providers,
-          season: widget.season,
-          episode: widget.episode,
-        );
-        if (list.isNotEmpty) {
-          resolvedUrl = (list.first['url'] ?? '').toString().trim();
-        }
-      } catch (_) {}
-    }
-
     if (!mounted) return;
     setState(() => _isLaunching = false);
 
-    if (resolvedUrl.isNotEmpty) {
+    if (primaryUrl.isNotEmpty) {
       final nav = Navigator.of(context, rootNavigator: true);
       nav.pop();
       nav.push(
         MaterialPageRoute(
           builder: (_) => InternalPlayerScreen(
-            videoUrl: resolvedUrl,
+            videoUrl: primaryUrl,
             title: displayTitle,
             tmdbId: tmdbId,
             tmdbKey: AppConfig.tmdbKey,
             gistUrl: gistUrl,
-            isTv: isTv,
+            isTv: _isSeries,
             season: sNum,
             episode: eNum,
           ),
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Stream start nahi ho saka.')),
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF16181F),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (_) => MobileQualitySelectorSheet(
+          item: widget.item,
+          season: _isSeries ? sNum : widget.season,
+          episode: _isSeries ? eNum : widget.episode,
+          providers: widget.providers,
+          onPlaySaved: widget.onPlaySaved,
+        ),
       );
     }
   }
@@ -179,10 +265,14 @@ class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
     final poster = (widget.item['poster'] ?? '').toString();
     final rating = (widget.item['rating'] ?? '').toString();
     final year = (widget.item['year'] ?? '').toString();
+    final tmdbId = (widget.item['tmdb_id'] ?? widget.item['id'] ?? '').toString().trim();
 
     return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.82),
-      padding: const EdgeInsets.all(18),
+      constraints: BoxConstraints(
+        minHeight: MediaQuery.of(context).size.height * 0.75,
+        maxHeight: MediaQuery.of(context).size.height * 0.92,
+      ),
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
       decoration: const BoxDecoration(
         color: Color(0xFF16181F),
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -192,6 +282,17 @@ class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -200,12 +301,12 @@ class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
                     borderRadius: BorderRadius.circular(10),
                     child: Image.network(
                       poster,
-                      width: 100,
-                      height: 145,
+                      width: 105,
+                      height: 152,
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => Container(
-                        width: 100,
-                        height: 145,
+                        width: 105,
+                        height: 152,
                         color: Colors.grey[900],
                         child: const Icon(Icons.movie, color: Colors.white38),
                       ),
@@ -218,7 +319,7 @@ class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.bold),
+                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 8),
                       Row(
@@ -239,12 +340,87 @@ class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
                             ),
                         ],
                       ),
+                      if (_isSeries) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          'Selected: Season $_selectedSeason • Episode $_selectedEpisode',
+                          style: const TextStyle(
+                            color: Color(0xFF38BDF8),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            if (_isSeries) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'Season',
+                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 38,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _totalSeasons,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (_, idx) {
+                    final s = idx + 1;
+                    final selected = s == _selectedSeason;
+                    return ChoiceChip(
+                      label: Text('S$s'),
+                      selected: selected,
+                      selectedColor: const Color(0xFF0072D2),
+                      backgroundColor: const Color(0xFF1E2029),
+                      labelStyle: TextStyle(
+                        color: selected ? Colors.white : Colors.white70,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      onSelected: (_) async {
+                        setState(() {
+                          _selectedSeason = s;
+                          _selectedEpisode = 1;
+                        });
+                        await _fetchSeasonEpisodeCount(tmdbId, s);
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Episodes',
+                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: List.generate(_totalEpisodes, (idx) {
+                  final ep = idx + 1;
+                  final selected = ep == _selectedEpisode;
+                  return ChoiceChip(
+                    label: Text('Ep $ep'),
+                    selected: selected,
+                    selectedColor: const Color(0xFFE50914),
+                    backgroundColor: const Color(0xFF1E2029),
+                    labelStyle: TextStyle(
+                      color: selected ? Colors.white : Colors.white70,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    onSelected: (_) {
+                      setState(() => _selectedEpisode = ep);
+                    },
+                  );
+                }),
+              ),
+            ],
+            const SizedBox(height: 18),
             SizedBox(
               width: double.infinity,
               height: 48,
@@ -263,7 +439,9 @@ class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
                       )
                     : const Icon(Icons.play_arrow_rounded, size: 24),
                 label: Text(
-                  _isLaunching ? 'Starting Player...' : 'Watch Now',
+                  _isLaunching
+                      ? 'Starting Player...'
+                      : (_isSeries ? 'Watch S$_selectedSeason E$_selectedEpisode' : 'Watch Now'),
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
               ),
@@ -635,6 +813,7 @@ class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet>
       final opened = await _kMedia3PlayerChannel.invokeMethod<bool>('playMedia', {
         'url': cleanUrl,
         'title': title,
+        'servers': streams,
         'userAgent': 'VLC/3.0.18 LibVLC/3.0.18 (Linux; Android 13)',
       });
       if (opened == true && mounted) {
