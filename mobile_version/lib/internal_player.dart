@@ -40,18 +40,18 @@ class _InternalPlayerState extends State<InternalPlayer> {
     _fetchAndLaunchNative();
   }
 
-  List> _serializeServers() {
-    return _servers
-        .map(
-          (s) => {
-            'url': s.url,
-            'title': s.title,
-            'providerName': s.providerName,
-            'quality': s.quality,
-            'headers': s.headers,
-          },
-        )
-        .toList();
+  List<dynamic> _serializeServers() {
+    final out = >[];
+    for (final s in _servers) {
+      out.add({
+        'url': s.url,
+        'title': s.title,
+        'providerName': s.providerName,
+        'quality': s.quality,
+        'headers': s.headers,
+      });
+    }
+    return out;
   }
 
   Future<void> _openNativeWithCurrentServers() async {
