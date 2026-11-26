@@ -31,6 +31,7 @@ import android.widget.TextView
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -38,8 +39,11 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import org.json.JSONArray
@@ -256,11 +260,11 @@ class Media3PlayerActivity : AppCompatActivity() {
         mobileTopBar.addView(mobileAudioBtn)
         rootLayout.addView(mobileTopBar)
 
-        // TV Status Toast Banner (Top-Left)
+        // Status / Resolution Banner (Top-Left)
         tvStatusBanner = TextView(this).apply {
             visibility = View.GONE
             setTextColor(Color.WHITE)
-            textSize = 14f
+            textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
             background = makePill(Color.parseColor("#E0101A24"), primeBlue)
             setPadding(dp(16), dp(8), dp(16), dp(8))
@@ -409,7 +413,39 @@ class Media3PlayerActivity : AppCompatActivity() {
     }
 
     private fun initExoPlayer() {
-        val exo = ExoPlayer.Builder(this).build()
+        // Force highest available bitrate & resolution (no SD/480p downgrade)
+        val trackSelector = DefaultTrackSelector(this).apply {
+            setParameters(
+                buildUponParameters()
+                    .setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
+                    .setMaxVideoBitrate(Int.MAX_VALUE)
+                    .setForceHighestSupportedBitrate(true)
+                    .setAllowVideoMixedMimeTypeAdaptiveness(true)
+                    .setAllowAudioMixedMimeTypeAdaptiveness(true)
+            )
+        }
+
+        // Strong buffer configuration for smooth 1080p/4K playback
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                15_000, // minBufferMs
+                50_000, // maxBufferMs
+                2_000,  // bufferForPlaybackMs
+                4_000   // bufferForPlaybackAfterRebufferMs
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
+        // Prefer Hardware MediaCodec decoders with software fallback
+        val renderersFactory = DefaultRenderersFactory(this)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            .setEnableDecoderFallback(true)
+
+        val exo = ExoPlayer.Builder(this, renderersFactory)
+            .setTrackSelector(trackSelector)
+            .setLoadControl(loadControl)
+            .build()
+
         exoPlayer = exo
         playerView.player = exo
 
@@ -427,6 +463,7 @@ class Media3PlayerActivity : AppCompatActivity() {
                     if (playbackState == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
                 if (playbackState == Player.STATE_READY) {
                     applyVolume(currentVolumePct, showHud = false)
+                    announceVideoFormat(exo.videoFormat)
                 }
             }
 
@@ -437,6 +474,19 @@ class Media3PlayerActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    private fun announceVideoFormat(fmt: Format?) {
+        if (fmt == null) return
+        val w = fmt.width
+        val h = fmt.height
+        val mbps = if (fmt.bitrate > 0) String.format("%.1f Mbps", fmt.bitrate / 1_000_000f) else ""
+        val info = buildString {
+            append("HW • ")
+            if (w > 0 && h > 0) append("${w}x${h}") else append("HD")
+            if (mbps.isNotEmpty()) append(" • $mbps")
+        }
+        showTvStatus(info)
     }
 
     fun updateServersFromBridge(serversJson: String) {
@@ -508,6 +558,8 @@ class Media3PlayerActivity : AppCompatActivity() {
 
         val httpFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(20_000)
         if (item.headers.isNotEmpty()) {
             httpFactory.setDefaultRequestProperties(item.headers)
         }
@@ -546,7 +598,7 @@ class Media3PlayerActivity : AppCompatActivity() {
         handler.removeCallbacks(hideTvStatusTask)
         tvStatusBanner.text = msg
         tvStatusBanner.visibility = View.VISIBLE
-        handler.postDelayed(hideTvStatusTask, 2200)
+        handler.postDelayed(hideTvStatusTask, 3000)
     }
 
     private fun setTvMenuOpen(open: Boolean) {
