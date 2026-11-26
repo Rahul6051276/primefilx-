@@ -28,6 +28,10 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Generate Android v2 Files
+        working-directory: ./mobile_version
+        run: flutter create . --platforms=android
+
       - name: Install Dependencies
         working-directory: ./mobile_version
         run: flutter pub get
