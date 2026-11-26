@@ -1,282 +1,285 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'tmdb_service.dart';
 
-class MobileStreamService {
-  static const String renderApiBase =
-      'https://tmdb-embed-api-4.onrender.com';
+class StreamLink {
+  final String providerName;
+  final String title;
+  final String url;
+  final String quality;
+  final Map<String, String> headers;
 
-  static Future> _fetchXtreamConfig() async {
-    String endpoint = AppConfig.gistUrl.trim();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final customUrl = (prefs.getString('custom_gist_url') ?? '').trim();
-      if (customUrl.isNotEmpty) {
-        endpoint = customUrl;
-      }
-    } catch (_) {}
+  StreamLink({
+    required this.providerName,
+    required this.title,
+    required this.url,
+    this.quality = 'HD',
+    this.headers = const {},
+  });
+}
 
-    if (endpoint.isNotEmpty) {
-      try {
-        final sep = endpoint.contains('?') ? '&' : '?';
-        final res = await http
-            .get(Uri.parse('$endpoint${sep}t=${DateTime.now().millisecondsSinceEpoch}'))
-            .timeout(const Duration(seconds: 6));
+class StreamService {
+  static const String _gistUrlKey = 'saved_gist_raw_url';
+  static List> _cachedProviders = [];
+  static final Map<String, List<dynamic>> _xtreamVodCache = {};
+  static final Map<String, List<dynamic>> _xtreamSeriesCache = {};
 
-        if (res.statusCode == 200) {
-          final data = jsonDecode(res.body);
-          if (data is Map) {
-            String host = (data['xc_host'] ?? data['host'] ?? '').toString().trim();
-            String username = (data['xc_username'] ?? data['username'] ?? '').toString().trim();
-            String password = (data['xc_password'] ?? data['password'] ?? '').toString().trim();
+  static Future<String> getSavedGistUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_gistUrlKey) ?? '';
+  }
 
-            final provs = data['active_providers'] ?? data['providers'];
-            if ((host.isEmpty || username.isEmpty || password.isEmpty) && provs is List) {
-              for (final p in provs) {
-                if (p is Map && (p['type'] == 'xtream' || p['xc_host'] != null)) {
-                  host = (p['xc_host'] ?? p['server'] ?? p['url'] ?? '').toString().trim();
-                  username = (p['xc_username'] ?? p['username'] ?? '').toString().trim();
-                  password = (p['xc_password'] ?? p['password'] ?? '').toString().trim();
-                  if (host.isNotEmpty && username.isNotEmpty && password.isNotEmpty) break;
-                }
-              }
-            }
+  /// Gist Raw URL save karta hai aur turant providers load karke count return karta hai
+  static Future<int> saveAndConnectGistUrl(String rawUrl) async {
+    final cleanUrl = rawUrl.trim();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_gistUrlKey, cleanUrl);
 
-            if (host.isNotEmpty && username.isNotEmpty && password.isNotEmpty) {
-              return {
-                'host': host.replaceAll(RegExp(r'/+$'), ''),
-                'username': username,
-                'password': password,
-              };
-            }
-          }
-        }
-      } catch (_) {}
+    _cachedProviders = [];
+    _xtreamVodCache.clear();
+    _xtreamSeriesCache.clear();
+
+    final providers = await loadProviders(forceRefresh: true);
+    return providers.length;
+  }
+
+  static Future<List>> loadProviders({
+    bool forceRefresh = false,
+  }) async {
+    if (!forceRefresh && _cachedProviders.isNotEmpty) {
+      return _cachedProviders;
     }
 
-    return {
-      'host': 'http://line.portal4k.love',
-      'username': 'f4:fe:fb:81:9e:e0',
-      'password': 'C9DLMNMLDR',
-    };
+    final url = await getSavedGistUrl();
+    if (url.isEmpty) return [];
+
+    try {
+      final res = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode == 200) {
+        final decoded = json.decode(res.body);
+        final list = (decoded['active_providers'] as List? ?? []);
+        _cachedProviders =
+            list.map>((e) => Map<String, dynamic>.from(e)).toList();
+        return _cachedProviders;
+      }
+    } catch (_) {}
+    return [];
   }
 
-  static bool isHindiStream(String title, {String category = ''}) {
-    final lower = '$title $category'.toLowerCase();
-
-    return lower.contains('hindi') ||
-        lower.contains('dual') ||
-        lower.contains('multi') ||
-        lower.contains('dubbed') ||
-        lower.contains('hin') ||
-        lower.contains('dub');
-  }
-
-  static Future<List<dynamic>> getDirectStreams({
-    required dynamic item,
-    required dynamic providers,
+  /// Saare providers (Stremio + Xtream) ko ek saath hit karta hai aur jo pehle mile usko yield karta hai
+  static Stream<StreamLink> fetchStreams({
+    required int tmdbId,
+    required String title,
+    required bool isTv,
     int? season,
     int? episode,
-  }) async {
-    final List<dynamic> resolved = [];
+  }) {
+    final controller = StreamController<StreamLink>();
 
-    final targetTmdbId = (item['tmdb_id'] ?? item['id'] ?? '').toString().trim();
-    final isTv = item['isTv'] == true || season != null;
-    final movieTitle = (item['title'] ?? item['name'] ?? '').toString().toLowerCase();
-
-    final cleanTitle =
-        movieTitle.replaceAll(RegExp(r'[^a-z0-9\s]'), '').trim();
-
-    final targetSeason = season ?? 1;
-    final targetEpisode = episode ?? 1;
-
-    // 1. Render Cloud API Streams
-    if (targetTmdbId.isNotEmpty) {
+    () async {
       try {
-        final mediaType = isTv ? 'series' : 'movie';
+        final providers = await loadProviders();
+        if (providers.isEmpty) {
+          await controller.close();
+          return;
+        }
 
-        final apiUrl = isTv
-            ? '$renderApiBase/api/streams/$mediaType/$targetTmdbId?season=$targetSeason&episode=$targetEpisode'
-            : '$renderApiBase/api/streams/$mediaType/$targetTmdbId';
+        final imdbId = await TmdbService.getImdbId(tmdbId, isTv);
+        final List<Future<void>> tasks = [];
 
-        final res = await http
-            .get(Uri.parse(apiUrl))
-            .timeout(const Duration(seconds: 6));
+        for (final provider in providers) {
+          final type = (provider['type'] ?? '').toString().toLowerCase();
+          if (type == 'stremio' && imdbId != null && imdbId.isNotEmpty) {
+            tasks.add(_fetchFromStremio(
+              provider: provider,
+              imdbId: imdbId,
+              isTv: isTv,
+              season: season,
+              episode: episode,
+              onFound: (link) {
+                if (!controller.isClosed) controller.add(link);
+              },
+            ));
+          } else if (type == 'xtream') {
+            tasks.add(_fetchFromXtream(
+              provider: provider,
+              title: title,
+              isTv: isTv,
+              season: season,
+              episode: episode,
+              onFound: (link) {
+                if (!controller.isClosed) controller.add(link);
+              },
+            ));
+          }
+        }
 
-        if (res.statusCode == 200) {
-          final data = jsonDecode(res.body);
+        await Future.wait(tasks);
+      } catch (_) {} finally {
+        if (!controller.isClosed) {
+          await controller.close();
+        }
+      }
+    }();
 
-          final List<dynamic> streamList = [];
+    return controller.stream;
+  }
 
-          if (data is List) {
-            streamList.addAll(data);
-          } else if (data is Map && data['streams'] is List) {
-            streamList.addAll(data['streams']);
-          } else if (data is Map) {
-            data.forEach((key, value) {
-              if (value is List) streamList.addAll(value);
+  static Future<void> _fetchFromStremio({
+    required Map<String, dynamic> provider,
+    required String imdbId,
+    required bool isTv,
+    int? season,
+    int? episode,
+    required void Function(StreamLink) onFound,
+  }) async {
+    try {
+      final name = (provider['name'] ?? 'Stremio').toString();
+      String manifestUrl = (provider['url'] ?? '').toString().trim();
+      if (manifestUrl.isEmpty) return;
+
+      final baseUrl = manifestUrl.replaceAll(RegExp(r'/manifest\.json$'), '');
+      final streamPath = isTv
+          ? 'series/$imdbId:${season ?? 1}:${episode ?? 1}.json'
+          : 'movie/$imdbId.json';
+
+      final uri = Uri.parse('$baseUrl/stream/$streamPath');
+      final res = await http.get(uri).timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        final streams = (data['streams'] as List? ?? []);
+
+        for (final s in streams) {
+          final streamUrl = (s['url'] ?? '').toString().trim();
+          if (streamUrl.isEmpty || !streamUrl.startsWith('http')) continue;
+
+          final rawTitle =
+              (s['title'] ?? s['description'] ?? s['name'] ?? 'HD Stream')
+                  .toString()
+                  .replaceAll('\n', ' • ');
+
+          final Map<String, String> headers = {};
+          final proxyHeaders = s['behaviorHints']?['proxyHeaders']?['request'];
+          if (proxyHeaders is Map) {
+            proxyHeaders.forEach((k, v) {
+              headers[k.toString()] = v.toString();
             });
           }
 
-          for (var s in streamList) {
-            if (s is! Map) continue;
-            final sUrl = (s['url'] ?? '').toString().trim();
+          onFound(StreamLink(
+            providerName: name,
+            title: rawTitle,
+            url: streamUrl,
+            quality: _extractQuality(rawTitle),
+            headers: headers,
+          ));
+        }
+      }
+    } catch (_) {}
+  }
 
-            if (sUrl.isNotEmpty) {
-              final sTitle =
-                  (s['title'] ?? ('$movieTitle - ${s['name'] ?? 'HD'}'))
-                      .toString();
+  static Future<void> _fetchFromXtream({
+    required Map<String, dynamic> provider,
+    required String title,
+    required bool isTv,
+    int? season,
+    int? episode,
+    required void Function(StreamLink) onFound,
+  }) async {
+    try {
+      final name = (provider['name'] ?? 'Xtream').toString();
+      String host = (provider['host'] ?? '').toString().trim();
+      final user = (provider['username'] ?? '').toString().trim();
+      final pass = (provider['password'] ?? '').toString().trim();
 
-              final provName =
-                  (s['provider'] ?? s['name'] ?? 'Render Cloud').toString();
+      if (host.isEmpty || user.isEmpty || pass.isEmpty) return;
+      if (host.endsWith('/')) host = host.substring(0, host.length - 1);
 
-              final isHindi = isHindiStream(sTitle);
+      final cacheKey = '$host|$user';
+      final target = _normalize(title);
 
-              resolved.add({
-                'server': 'Cloud - $provName',
-                'title': sTitle,
-                'url': sUrl,
-                'isHindi': isHindi,
-              });
+      if (!isTv) {
+        List<dynamic> vodList;
+        if (_xtreamVodCache.containsKey(cacheKey)) {
+          vodList = _xtreamVodCache[cacheKey]!;
+        } else {
+          final uri = Uri.parse(
+            '$host/player_api.php?username=$user&password=$pass&action=get_vod_streams',
+          );
+          final res = await http.get(uri).timeout(const Duration(seconds: 20));
+          if (res.statusCode != 200) return;
+          vodList = json.decode(res.body) as List? ?? [];
+          _xtreamVodCache[cacheKey] = vodList;
+        }
+
+        int matched = 0;
+        for (final item in vodList) {
+          final itemName = (item['name'] ?? '').toString();
+          if (_isMatch(_normalize(itemName), target)) {
+            final streamId = item['stream_id'];
+            final ext = (item['container_extension'] ?? 'mp4').toString();
+            if (streamId != null) {
+              onFound(StreamLink(
+                providerName: name,
+                title: itemName,
+                url: '$host/movie/$user/$pass/$streamId.$ext',
+                quality: _extractQuality(itemName),
+              ));
+              matched++;
+              if (matched >= 3) break;
             }
           }
         }
-      } catch (_) {}
-    }
-
-    // 2. Xtream IPTV VOD & Series Matching
-    try {
-      final config = await _fetchXtreamConfig();
-
-      final xcHost = (config['host'] ?? '').toString().replaceAll(RegExp(r'/+$'), '');
-      final xcUser = (config['username'] ?? '').toString();
-      final xcPass = (config['password'] ?? '').toString();
-
-      if (xcHost.isNotEmpty && xcUser.isNotEmpty && xcPass.isNotEmpty) {
-        if (!isTv) {
-          final vodUrl =
-              '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_vod_streams';
-
-          final vodRes = await http
-              .get(Uri.parse(vodUrl))
-              .timeout(const Duration(seconds: 12));
-
-          if (vodRes.statusCode == 200) {
-            final vodData = jsonDecode(vodRes.body);
-
-            if (vodData is List && vodData.isNotEmpty) {
-              final matches = vodData.where((m) {
-                if (m is! Map) return false;
-                final name = (m['name'] ?? '').toString().toLowerCase();
-
-                final cleanNameReplaced =
-                    name.replaceAll(RegExp(r'[^a-z0-9\s]'), '').trim();
-
-                if (cleanTitle.isEmpty) return false;
-
-                return cleanNameReplaced.contains(cleanTitle) ||
-                    cleanTitle.contains(cleanNameReplaced);
-              }).toList();
-
-              for (var matched in matches) {
-                final streamId = matched['stream_id'];
-                final container = matched['container_extension'] ?? 'mp4';
-                final rawName = matched['name'] ?? 'Xtream Movie';
-
-                final streamUrl =
-                    '$xcHost/movie/$xcUser/$xcPass/$streamId.$container';
-
-                final isHindi = isHindiStream(rawName.toString());
-
-                resolved.add({
-                  'server': 'Xtream - IPTV',
-                  'title': isHindi
-                      ? '🎬 $rawName [Hindi Dubbed]'
-                      : '🎬 $rawName [Original]',
-                  'url': streamUrl,
-                  'isHindi': isHindi,
-                });
-              }
-            }
-          }
+      } else {
+        List<dynamic> seriesList;
+        if (_xtreamSeriesCache.containsKey(cacheKey)) {
+          seriesList = _xtreamSeriesCache[cacheKey]!;
         } else {
-          final seriesUrl =
-              '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_series';
+          final uri = Uri.parse(
+            '$host/player_api.php?username=$user&password=$pass&action=get_series',
+          );
+          final res = await http.get(uri).timeout(const Duration(seconds: 20));
+          if (res.statusCode != 200) return;
+          seriesList = json.decode(res.body) as List? ?? [];
+          _xtreamSeriesCache[cacheKey] = seriesList;
+        }
 
-          final seriesRes = await http
-              .get(Uri.parse(seriesUrl))
-              .timeout(const Duration(seconds: 10));
+        for (final item in seriesList) {
+          final itemName = (item['name'] ?? '').toString();
+          if (_isMatch(_normalize(itemName), target)) {
+            final seriesId = item['series_id'];
+            if (seriesId == null) continue;
 
-          if (seriesRes.statusCode == 200) {
-            final seriesJson = jsonDecode(seriesRes.body);
+            final infoUri = Uri.parse(
+              '$host/player_api.php?username=$user&password=$pass&action=get_series_info&series_id=$seriesId',
+            );
+            final infoRes =
+                await http.get(infoUri).timeout(const Duration(seconds: 15));
+            if (infoRes.statusCode != 200) continue;
 
-            if (seriesJson is List) {
-              dynamic matchedSeries;
-              for (final s in seriesJson) {
-                if (s is Map &&
-                    cleanTitle.isNotEmpty &&
-                    (s['name'] ?? '').toString().toLowerCase().contains(cleanTitle)) {
-                  matchedSeries = s;
-                  break;
-                }
-              }
-
-              if (matchedSeries != null) {
-                final seriesId = matchedSeries['series_id'];
-
-                final infoUrl =
-                    '$xcHost/player_api.php?username=$xcUser&password=$xcPass&action=get_series_info&series_id=$seriesId';
-
-                final infoRes = await http
-                    .get(Uri.parse(infoUrl))
-                    .timeout(const Duration(seconds: 10));
-
-                if (infoRes.statusCode == 200) {
-                  final infoData = jsonDecode(infoRes.body);
-
-                  if (infoData is Map && infoData['episodes'] != null) {
-                    final episodesMap = infoData['episodes'];
-
-                    final seasonEpisodes =
-                        episodesMap is Map ? episodesMap[targetSeason.toString()] : null;
-
-                    if (seasonEpisodes is List) {
-                      dynamic targetEp;
-                      for (final e in seasonEpisodes) {
-                        if (e is Map &&
-                            e['episode_num'].toString() == targetEpisode.toString()) {
-                          targetEp = e;
-                          break;
-                        }
-                      }
-
-                      if (targetEp != null) {
-                        final epId = targetEp['id'];
-
-                        final container =
-                            targetEp['container_extension'] ?? 'mp4';
-
-                        final epTitle =
-                            targetEp['title'] ?? 'S${targetSeason}E$targetEpisode';
-
-                        final epUrl =
-                            '$xcHost/series/$xcUser/$xcPass/$epId.$container';
-
-                        final isHindi = isHindiStream(epTitle.toString()) ||
-                            isHindiStream(
-                                matchedSeries['name']?.toString() ?? '');
-
-                        resolved.add({
-                          'server': 'Xtream - IPTV Series',
-                          'title': isHindi
-                              ? '📺 $epTitle [Hindi Dubbed]'
-                              : '📺 $epTitle [Original]',
-                          'url': epUrl,
-                          'isHindi': isHindi,
-                        });
-                      }
-                    }
+            final infoData = json.decode(infoRes.body);
+            final episodesMap = infoData['episodes'];
+            if (episodesMap is Map) {
+              final seasonKey = (season ?? 1).toString();
+              final epList = episodesMap[seasonKey] as List? ?? [];
+              for (final ep in epList) {
+                final epNum = int.tryParse(ep['episode_num'].toString()) ?? -1;
+                if (epNum == (episode ?? 1)) {
+                  final epId = ep['id'];
+                  final ext = (ep['container_extension'] ?? 'mp4').toString();
+                  if (epId != null) {
+                    onFound(StreamLink(
+                      providerName: name,
+                      title: '$itemName • S${season ?? 1}E${episode ?? 1}',
+                      url: '$host/series/$user/$pass/$epId.$ext',
+                      quality: _extractQuality(itemName),
+                    ));
+                    return;
                   }
                 }
               }
@@ -285,25 +288,29 @@ class MobileStreamService {
         }
       }
     } catch (_) {}
+  }
 
-    // Fallback if empty
-    if (resolved.isEmpty && targetTmdbId.isNotEmpty) {
-      resolved.add({
-        'server': 'Render Cloud Server',
-        'title': '$movieTitle (Official Stream)',
-        'url': isTv
-            ? 'https://vidsrc.me/embed/tv?tmdb=$targetTmdbId&season=$targetSeason&episode=$targetEpisode'
-            : 'https://vidsrc.me/embed/movie?tmdb=$targetTmdbId',
-        'isHindi': true,
-      });
-    }
+  static String _normalize(String s) {
+    return s
+        .toLowerCase()
+        .replaceAll(RegExp(r'\(\d{4}\)'), '')
+        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
 
-    // Sort Hindi first priority
-    resolved.sort(
-      (a, b) => (b['isHindi'] == true ? 1 : 0)
-          .compareTo(a['isHindi'] == true ? 1 : 0),
-    );
+  static bool _isMatch(String candidate, String target) {
+    if (candidate.isEmpty || target.isEmpty) return false;
+    return candidate == target ||
+        candidate.contains(target) ||
+        (candidate.length > 4 && target.contains(candidate));
+  }
 
-    return resolved;
+  static String _extractQuality(String text) {
+    final upper = text.toUpperCase();
+    if (upper.contains('4K') || upper.contains('2160')) return '4K';
+    if (upper.contains('1080')) return '1080p';
+    if (upper.contains('720')) return '720p';
+    return 'HD';
   }
 }

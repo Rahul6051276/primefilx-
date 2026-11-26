@@ -1,967 +1,444 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
-import '../services/tmdb_service.dart';
-import '../services/stream_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../internal_player.dart';
+import '../services/tmdb_service.dart';
 
-const MethodChannel _kMedia3PlayerChannel = MethodChannel('com.primeflix/media3');
-
-class MobileMovieDetailSheet extends StatefulWidget {
+class MobileStreamModal extends StatefulWidget {
   final Map<String, dynamic> item;
-  final List<dynamic> providers;
-  final int? season;
-  final int? episode;
-  final VoidCallback onPlaySaved;
 
-  const MobileMovieDetailSheet({
-    super.key,
-    required this.item,
-    required this.providers,
-    this.season,
-    this.episode,
-    required this.onPlaySaved,
-  });
+  const MobileStreamModal({super.key, required this.item});
+
+  static void show(BuildContext context, Map<String, dynamic> item) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF141414),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => MobileStreamModal(item: item),
+    );
+  }
 
   @override
-  State<MobileMovieDetailSheet> createState() => _MobileMovieDetailSheetState();
+  State<MobileStreamModal> createState() => _MobileStreamModalState();
 }
 
-class _MobileMovieDetailSheetState extends State<MobileMovieDetailSheet> {
-  String _overview = '';
-  bool _isLaunching = false;
-  late int _selectedSeason;
-  late int _selectedEpisode;
-  int _totalSeasons = 5;
-  int _totalEpisodes = 12;
+class _MobileStreamModalState extends State<MobileStreamModal> {
+  bool _showEpisodes = false;
+  bool _loadingSeasons = false;
+  bool _loadingEpisodes = false;
 
-  bool get _isSeries =>
-      widget.season != null ||
-      widget.item['isTv'] == true ||
-      (widget.item['media_type']?.toString().toLowerCase() == 'tv') ||
-      (widget.item['type']?.toString().toLowerCase() == 'series') ||
-      (widget.item['type']?.toString().toLowerCase() == 'tv');
+  List> _seasons = [];
+  List> _episodes = [];
+  int _selectedSeason = 1;
 
-  @override
-  void initState() {
-    super.initState();
-    _selectedSeason = widget.season ?? 1;
-    _selectedEpisode = widget.episode ?? 1;
-    _overview = (widget.item['overview'] ?? '').toString().trim();
-    if (_overview.isEmpty || _isSeries) {
-      _fetchSeriesAndStorylineDetails();
-    }
+  bool get _isTv {
+    final type = widget.item['media_type'];
+    if (type == 'tv') return true;
+    if (type == 'movie') return false;
+    return widget.item['first_air_date'] != null;
   }
 
-  Future<void> _fetchSeriesAndStorylineDetails() async {
-    final tmdbId = (widget.item['tmdb_id'] ?? widget.item['id'] ?? '').toString().trim();
-    if (tmdbId.isEmpty || AppConfig.tmdbKey.isEmpty) return;
+  int get _tmdbId => (widget.item['id'] as num?)?.toInt() ?? 0;
 
-    final pathType = _isSeries ? 'tv' : 'movie';
-    try {
-      final uri = Uri.parse('${AppConfig.tmdbBase}/$pathType/$tmdbId?api_key=${AppConfig.tmdbKey}');
-      final res = await http.get(uri).timeout(const Duration(seconds: 6));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final text = (data['overview'] ?? '').toString().trim();
-        final seasonsList = data['seasons'];
-        int sCount = _totalSeasons;
-        if (seasonsList is List && seasonsList.isNotEmpty) {
-          final validSeasons = seasonsList
-              .where((s) => s is Map && ((s['season_number'] ?? 0) as int) > 0)
-              .toList();
-          if (validSeasons.isNotEmpty) {
-            sCount = validSeasons.length.clamp(1, 20);
-          }
-        }
-        if (mounted) {
-          setState(() {
-            if (text.isNotEmpty && _overview.isEmpty) _overview = text;
-            _totalSeasons = sCount;
-          });
-        }
-        if (_isSeries) {
-          await _fetchSeasonEpisodeCount(tmdbId, _selectedSeason);
-        }
-      }
-    } catch (_) {}
+  String get _title =>
+      (widget.item['title'] ?? widget.item['name'] ?? 'Untitled').toString();
+
+  String get _overview =>
+      (widget.item['overview'] ?? 'No description available.').toString();
+
+  String get _year {
+    final date = (widget.item['release_date'] ??
+            widget.item['first_air_date'] ??
+            '')
+        .toString();
+    return date.length >= 4 ? date.substring(0, 4) : '';
   }
 
-  Future<void> _fetchSeasonEpisodeCount(String tmdbId, int seasonNum) async {
-    if (tmdbId.isEmpty || AppConfig.tmdbKey.isEmpty) return;
-    try {
-      final uri = Uri.parse(
-        '${AppConfig.tmdbBase}/tv/$tmdbId/season/$seasonNum?api_key=${AppConfig.tmdbKey}',
-      );
-      final res = await http.get(uri).timeout(const Duration(seconds: 6));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final eps = data['episodes'];
-        if (eps is List && eps.isNotEmpty && mounted) {
-          setState(() {
-            _totalEpisodes = eps.length.clamp(1, 50);
-            if (_selectedEpisode > _totalEpisodes) {
-              _selectedEpisode = 1;
-            }
-          });
-        }
-      }
-    } catch (_) {}
+  String get _rating {
+    final v = widget.item['vote_average'];
+    if (v is num && v > 0) return v.toStringAsFixed(1);
+    return 'HD';
   }
 
-  Future<void> _saveContinueWatching() async {
-    try {
-      final p = await SharedPreferences.getInstance();
-      await p.reload();
-      final decoded = jsonDecode(p.getString('continue_watching_mobile') ?? '[]');
-      if (decoded is List) {
-        var c = List<dynamic>.from(decoded);
-        c.removeWhere((e) => e['tmdb_id'].toString() == widget.item['tmdb_id'].toString());
-        c.insert(0, {
-          'tmdb_id': widget.item['tmdb_id'],
-          'title': widget.item['title'] ?? 'Untitled',
-          'overview': _overview,
-          'poster': widget.item['poster'] ?? '',
-          'backdrop': widget.item['backdrop'] ?? '',
-          'year': widget.item['year'] ?? '',
-          'rating': widget.item['rating'] ?? '8.0',
-          'isTv': _isSeries,
-        });
-        if (c.length > 15) c = c.sublist(0, 15);
-        await p.setString('continue_watching_mobile', jsonEncode(c));
-        widget.onPlaySaved();
-      }
-    } catch (_) {}
-  }
-
-  String _resolveGistUrl() {
-    if (AppConfig.gistUrl.trim().isNotEmpty) return AppConfig.gistUrl.trim();
-    for (final prov in widget.providers) {
-      if (prov is Map && prov['gist_url'] != null && prov['gist_url'].toString().trim().isNotEmpty) {
-        return prov['gist_url'].toString().trim();
-      }
-    }
-    return '';
-  }
-
-  Future<List<dynamic>> _collectAvailableServers(int sNum, int eNum) async {
-    final collected = <dynamic>[];
-    final directUrl = (widget.item['url'] ?? '').toString().trim();
-    final baseTitle = (widget.item['title'] ?? widget.item['name'] ?? 'Primeflix').toString().trim();
-
-    if (directUrl.isNotEmpty) {
-      collected.add({
-        'title': baseTitle,
-        'server': 'Direct Server',
-        'url': directUrl,
-        'isHindi': false,
-      });
-    }
-
-    try {
-      final cloudList = await MobileStreamService.getDirectStreams(
-        item: widget.item,
-        providers: widget.providers,
-        season: _isSeries ? sNum : widget.season,
-        episode: _isSeries ? eNum : widget.episode,
-      );
-      if (cloudList is List) {
-        for (final entry in cloudList) {
-          if (entry is Map && (entry['url'] ?? '').toString().trim().isNotEmpty) {
-            collected.add({
-              'title': (entry['title'] ?? baseTitle).toString(),
-              'server': (entry['server'] ?? 'Server').toString(),
-              'url': entry['url'].toString().trim(),
-              'isHindi': entry['isHindi'] == true,
-            });
-          }
-        }
-      }
-    } catch (_) {}
-
-    return collected;
+  void _openPlayer({int? season, int? episode}) {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => InternalPlayer(
+          tmdbId: _tmdbId,
+          title: _title,
+          isTv: _isTv,
+          season: season,
+          episode: episode,
+        ),
+      ),
+    );
   }
 
   Future<void> _onWatchNowPressed() async {
-    if (_isLaunching) return;
-    setState(() => _isLaunching = true);
-
-    await _saveContinueWatching();
-    if (!mounted) return;
-
-    final tmdbId = (widget.item['tmdb_id'] ?? widget.item['id'] ?? '').toString().trim();
-    final int sNum = _isSeries ? _selectedSeason : 1;
-    final int eNum = _isSeries ? _selectedEpisode : 1;
-    final String baseTitle = (widget.item['title'] ?? widget.item['name'] ?? 'Primeflix').toString().trim();
-    final String displayTitle = _isSeries ? '$baseTitle (S$sNum E$eNum)' : baseTitle;
-    final String gistUrl = _resolveGistUrl();
-
-    final serversList = await _collectAvailableServers(sNum, eNum);
-    final String primaryUrl = serversList.isNotEmpty ? (serversList.first['url'] ?? '').toString().trim() : '';
-
-    try {
-      final openedNative = await _kMedia3PlayerChannel.invokeMethod<bool>('playMedia', {
-        'url': primaryUrl,
-        'title': displayTitle,
-        'tmdbId': tmdbId,
-        'tmdbKey': AppConfig.tmdbKey,
-        'gistUrl': gistUrl,
-        'isTv': _isSeries,
-        'season': sNum,
-        'episode': eNum,
-        'servers': serversList,
-        'userAgent': 'VLC/3.0.18 LibVLC/3.0.18 (Linux; Android 13)',
-      });
-
-      if (mounted) setState(() => _isLaunching = false);
-      if (openedNative == true && mounted) {
-        Navigator.of(context).pop();
-        return;
-      }
-    } catch (_) {}
-
-    if (!mounted) return;
-    setState(() => _isLaunching = false);
-
-    if (primaryUrl.isNotEmpty) {
-      final nav = Navigator.of(context, rootNavigator: true);
-      nav.pop();
-      nav.push(
-        MaterialPageRoute(
-          builder: (_) => InternalPlayerScreen(
-            videoUrl: primaryUrl,
-            title: displayTitle,
-            tmdbId: tmdbId,
-            tmdbKey: AppConfig.tmdbKey,
-            gistUrl: gistUrl,
-            isTv: _isSeries,
-            season: sNum,
-            episode: eNum,
-          ),
-        ),
-      );
-    } else {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: const Color(0xFF16181F),
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        builder: (_) => MobileQualitySelectorSheet(
-          item: widget.item,
-          season: _isSeries ? sNum : widget.season,
-          episode: _isSeries ? eNum : widget.episode,
-          providers: widget.providers,
-          onPlaySaved: widget.onPlaySaved,
-        ),
-      );
+    if (!_isTv) {
+      // Movie: Seedha Internal Player open aur auto-play
+      _openPlayer();
+      return;
     }
+
+    // Web Series: Seasons aur Episodes load karo
+    setState(() {
+      _showEpisodes = true;
+      _loadingSeasons = true;
+    });
+
+    final seasons = await TmdbService.getTvSeasons(_tmdbId);
+    if (!mounted) return;
+
+    if (seasons.isNotEmpty) {
+      final firstSeason =
+          (seasons.first['season_number'] as num?)?.toInt() ?? 1;
+      setState(() {
+        _seasons = seasons;
+        _selectedSeason = firstSeason;
+        _loadingSeasons = false;
+      });
+      await _loadEpisodes(firstSeason);
+    } else {
+      setState(() {
+        _loadingSeasons = false;
+      });
+    }
+  }
+
+  Future<void> _loadEpisodes(int seasonNumber) async {
+    setState(() {
+      _selectedSeason = seasonNumber;
+      _loadingEpisodes = true;
+      _episodes = [];
+    });
+
+    final eps = await TmdbService.getSeasonEpisodes(_tmdbId, seasonNumber);
+    if (!mounted) return;
+    setState(() {
+      _episodes = eps;
+      _loadingEpisodes = false;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final title = (widget.item['title'] ?? widget.item['name'] ?? 'Untitled').toString();
-    final poster = (widget.item['poster'] ?? '').toString();
-    final rating = (widget.item['rating'] ?? '').toString();
-    final year = (widget.item['year'] ?? '').toString();
-    final tmdbId = (widget.item['tmdb_id'] ?? widget.item['id'] ?? '').toString().trim();
+    final backdropUrl = TmdbService.getBackdropUrl(
+      widget.item['backdrop_path'] ?? widget.item['poster_path'],
+    );
 
-    return Container(
-      constraints: BoxConstraints(
-        minHeight: MediaQuery.of(context).size.height * 0.75,
-        maxHeight: MediaQuery.of(context).size.height * 0.92,
-      ),
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
-      decoration: const BoxDecoration(
-        color: Color(0xFF16181F),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 14),
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (poster.isNotEmpty)
+    return DraggableScrollableSheet(
+      initialChildSize: _showEpisodes ? 0.85 : 0.62,
+      minChildSize: 0.5,
+      maxChildSize: 0.92,
+      expand: false,
+      builder: (ctx, scrollController) {
+        return SingleChildScrollView(
+          controller: scrollController,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Top Backdrop Image
+              Stack(
+                children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.network(
-                      poster,
-                      width: 105,
-                      height: 152,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        width: 105,
-                        height: 152,
-                        color: Colors.grey[900],
-                        child: const Icon(Icons.movie, color: Colors.white38),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
+                    child: backdropUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: backdropUrl,
+                            height: 210,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                          )
+                        : Container(
+                            height: 210,
+                            color: Colors.grey.shade900,
+                          ),
+                  ),
+                  Container(
+                    height: 210,
+                    decoration: const BoxDecoration(
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(20),
+                      ),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Color(0xFF141414)],
                       ),
                     ),
                   ),
-                if (poster.isNotEmpty) const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: CircleAvatar(
+                      backgroundColor: Colors.black54,
+                      child: IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () => Navigator.pop(context),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          if (rating.isNotEmpty && rating != '0.0') ...[
-                            const Icon(Icons.star_rounded, color: Colors.amber, size: 17),
-                            const SizedBox(width: 4),
-                            Text(
-                              rating,
-                              style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13),
-                            ),
-                            const SizedBox(width: 12),
-                          ],
-                          if (year.isNotEmpty)
-                            Text(
-                              year,
-                              style: const TextStyle(color: Colors.white60, fontSize: 13),
-                            ),
-                        ],
-                      ),
-                      if (_isSeries) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                          'Selected: Season $_selectedSeason • Episode $_selectedEpisode',
-                          style: const TextStyle(
-                            color: Color(0xFF38BDF8),
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-            if (_isSeries) ...[
-              const SizedBox(height: 16),
-              const Text(
-                'Season',
-                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                ],
               ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 38,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _totalSeasons,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (_, idx) {
-                    final s = idx + 1;
-                    final selected = s == _selectedSeason;
-                    return ChoiceChip(
-                      label: Text('S$s'),
-                      selected: selected,
-                      selectedColor: const Color(0xFF0072D2),
-                      backgroundColor: const Color(0xFF1E2029),
-                      labelStyle: TextStyle(
-                        color: selected ? Colors.white : Colors.white70,
+
+              // Title, Meta & Watch Now Button
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
-                      onSelected: (_) async {
-                        setState(() {
-                          _selectedSeason = s;
-                          _selectedEpisode = 1;
-                        });
-                        await _fetchSeasonEpisodeCount(tmdbId, s);
-                      },
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Episodes',
-                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: List.generate(_totalEpisodes, (idx) {
-                  final ep = idx + 1;
-                  final selected = ep == _selectedEpisode;
-                  return ChoiceChip(
-                    label: Text('Ep $ep'),
-                    selected: selected,
-                    selectedColor: const Color(0xFFE50914),
-                    backgroundColor: const Color(0xFF1E2029),
-                    labelStyle: TextStyle(
-                      color: selected ? Colors.white : Colors.white70,
-                      fontWeight: FontWeight.bold,
                     ),
-                    onSelected: (_) {
-                      setState(() => _selectedEpisode = ep);
-                    },
-                  );
-                }),
-              ),
-            ],
-            const SizedBox(height: 18),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                onPressed: _isLaunching ? null : _onWatchNowPressed,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFE50914),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                icon: _isLaunching
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.play_arrow_rounded, size: 24),
-                label: Text(
-                  _isLaunching
-                      ? 'Starting Player...'
-                      : (_isSeries ? 'Watch S$_selectedSeason E$_selectedEpisode' : 'Watch Now'),
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              'Storyline',
-              style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              _overview.isEmpty ? 'Storyline loading / unavailable.' : _overview,
-              style: const TextStyle(color: Colors.white70, fontSize: 13.5, height: 1.45),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE50914),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            _isTv ? 'WEB SERIES' : 'MOVIE',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        if (_year.isNotEmpty)
+                          Text(
+                            _year,
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                        const SizedBox(width: 10),
+                        const Icon(Icons.star, color: Colors.amber, size: 16),
+                        const SizedBox(width: 4),
+                        Text(
+                          _rating,
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
 
-class MobileQualitySelectorSheet extends StatefulWidget {
-  final Map<String, dynamic> item;
-  final int? season, episode;
-  final List<dynamic> providers;
-  final VoidCallback onPlaySaved;
+                    // Watch Now Button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 46,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFE50914),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: _onWatchNowPressed,
+                        icon: const Icon(Icons.play_arrow, size: 26),
+                        label: Text(
+                          _isTv
+                              ? (_showEpisodes
+                                  ? 'Select Episode Below'
+                                  : 'Watch Now (Episodes)')
+                              : 'Watch Now',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
 
-  const MobileQualitySelectorSheet({
-    super.key,
-    required this.item,
-    this.season,
-    this.episode,
-    required this.providers,
-    required this.onPlaySaved,
-  });
-
-  @override
-  State<MobileQualitySelectorSheet> createState() => _MobileQualitySelectorSheetState();
-}
-
-class _MobileQualitySelectorSheetState extends State<MobileQualitySelectorSheet> {
-  List<dynamic> streams = [];
-  bool loading = true;
-  String currentStatus = 'Finding best streaming servers...';
-
-  static final Map<String, List<dynamic>> _vodCache = {};
-  static final Map<String, List<dynamic>> _seriesCache = {};
-  static final Map<String, String> _imdbIdCache = {};
-
-  final Map<String, String> _iptvHeaders = {
-    'User-Agent': 'IPTVSmartersPro/1.0.0 (Linux; Android 12)',
-    'Accept': '*/*',
-  };
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchEverythingInParallel();
-  }
-
-  bool _isHindiAudioStream(String name) {
-    final l = name.toLowerCase();
-    return l.contains('hindi') ||
-        l.contains('dubbed') ||
-        l.contains('dual audio') ||
-        l.contains('dual-audio') ||
-        l.contains('multi audio') ||
-        l.contains('[hin]') ||
-        l.contains('(hin)');
-  }
-
-  String _clean(String t) => t
-      .toLowerCase()
-      .replaceAll(RegExp(r'\[.*?\]|\(.*?\)|fhd|1080p|720p|4k|hindi|dubbed|telugu|tamil|eng'), '')
-      .replaceAll(RegExp(r'[^a-z0-9]'), '')
-      .trim();
-
-  bool _isStrictMatch(String vName, String query, String? year) {
-    final cV = _clean(vName);
-    if (cV.isEmpty || query.isEmpty || !cV.contains(query)) return false;
-    if (year != null && year.length == 4 && vName.contains(year)) return true;
-    return cV == query || cV.startsWith(query);
-  }
-
-  Future<String?> _getImdbId(String tmdbId, bool isTv) async {
-    if (AppConfig.tmdbKey.isEmpty) return null;
-    if (_imdbIdCache.containsKey(tmdbId)) return _imdbIdCache[tmdbId];
-    try {
-      final ep = isTv ? 'tv' : 'movie';
-      final url = Uri.parse('${AppConfig.tmdbBase}/$ep/$tmdbId/external_ids?api_key=${AppConfig.tmdbKey}');
-      final res = await http.get(url).timeout(const Duration(seconds: 6));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final imdbId = data['imdb_id']?.toString();
-        if (imdbId != null && imdbId.isNotEmpty) {
-          _imdbIdCache[tmdbId] = imdbId;
-          return imdbId;
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  Future<List<dynamic>> _searchStremioStreams() async {
-    final out = <dynamic>[];
-    final tmdbId = widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
-    if (tmdbId == null || tmdbId.isEmpty) return out;
-
-    final bool isTv = widget.season != null || widget.item['isTv'] == true;
-    final imdbId = await _getImdbId(tmdbId, isTv);
-    if (imdbId == null) return out;
-
-    for (final p in widget.providers) {
-      if (p is! Map) continue;
-      final bool isStremio = p['type'] == 'stremio' || (p['url']?.toString().contains('manifest.json') == true);
-      if (!isStremio) continue;
-
-      var baseUrl = (p['url'] ?? p['base_url'])?.toString().trim().replaceAll(RegExp(r'/+$'), '') ?? '';
-      baseUrl = baseUrl.replaceFirst('stremio://', 'https://');
-      if (baseUrl.endsWith('/manifest.json')) {
-        baseUrl = baseUrl.substring(0, baseUrl.length - 14).replaceAll(RegExp(r'/+$'), '');
-      }
-
-      if (baseUrl.isEmpty) continue;
-      final sName = p['name']?.toString() ?? 'Stremio';
-
-      try {
-        final String streamPath = isTv
-            ? '$baseUrl/stream/series/$imdbId:${widget.season ?? 1}:${widget.episode ?? 1}.json'
-            : '$baseUrl/stream/movie/$imdbId.json';
-
-        final r = await http.get(
-          Uri.parse(streamPath),
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-          },
-        ).timeout(const Duration(seconds: 12));
-
-        if (r.statusCode == 200) {
-          final data = jsonDecode(r.body);
-          final streamList = data['streams'] as List? ?? [];
-
-          for (final s in streamList) {
-            final String? directUrl = s['url']?.toString();
-            if (directUrl == null || directUrl.isEmpty || !directUrl.startsWith('http')) continue;
-
-            final String sourceName = s['name']?.toString() ?? sName;
-            final String rawTitle = s['title']?.toString() ?? widget.item['title'] ?? 'Stream';
-            final String displayTitle = rawTitle.split('\n').first.trim();
-            final bool isHindi = _isHindiAudioStream(rawTitle) || sourceName.toLowerCase().contains('hindi');
-
-            out.add({
-              'title': displayTitle,
-              'server': '$sName ($sourceName)',
-              'url': directUrl,
-              'isHindi': isHindi,
-              'isStremio': true,
-            });
-          }
-        }
-      } catch (_) {}
-    }
-    return out;
-  }
-
-  Future<List<dynamic>> _searchXtreamStreams() async {
-    final out = <dynamic>[];
-    final title = widget.item['title'] ?? widget.item['name'] ?? '';
-    final tmdbId = widget.item['tmdb_id']?.toString() ?? widget.item['id']?.toString();
-    final year = widget.item['year']?.toString();
-    final q = _clean(title);
-    final bool isTv = widget.season != null || widget.item['isTv'] == true;
-
-    for (final p in widget.providers) {
-      if (p is! Map) continue;
-      if (p['type'] != 'xtream' && p['xc_host'] == null) continue;
-      final host = (p['xc_host'] ?? p['server'] ?? p['url'])?.toString().replaceAll(RegExp(r'/+$'), '');
-      final user = (p['xc_username'] ?? p['username'])?.toString();
-      final pass = (p['xc_password'] ?? p['password'])?.toString();
-      final sName = (p['name'] ?? 'Xtream Server').toString();
-      if (host == null || user == null || pass == null || host.isEmpty) continue;
-
-      try {
-        if (!isTv) {
-          List<dynamic>? vodList = _vodCache[host];
-          if (vodList == null) {
-            final uri = Uri.parse('$host/player_api.php').replace(
-              queryParameters: {'username': user, 'password': pass, 'action': 'get_vod_streams'},
-            );
-            final r = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 20));
-            if (r.statusCode == 200 && jsonDecode(r.body) is List) {
-              vodList = jsonDecode(r.body);
-              _vodCache[host] = vodList!;
-            }
-          }
-          if (vodList != null && vodList.isNotEmpty) {
-            final List<dynamic> allM = [];
-            for (final v in vodList) {
-              final vN = v['name']?.toString() ?? '';
-              if (tmdbId != null && v['tmdb_id']?.toString() == tmdbId) {
-                allM.add(v);
-              } else if (_isStrictMatch(vN, q, year)) {
-                allM.add(v);
-              }
-            }
-            if (allM.isNotEmpty) {
-              allM.sort((a, b) {
-                final aH = _isHindiAudioStream(a['name']?.toString() ?? '');
-                final bH = _isHindiAudioStream(b['name']?.toString() ?? '');
-                return (aH && !bH) ? -1 : ((!aH && bH) ? 1 : 0);
-              });
-              for (final m in allM.take(2)) {
-                final realN = m['name']?.toString() ?? title;
-                out.add({
-                  'title': realN,
-                  'server': sName,
-                  'url': '$host/movie/$user/$pass/${m['stream_id']}.${m['container_extension'] ?? 'mp4'}',
-                  'isHindi': _isHindiAudioStream(realN) || sName.toLowerCase().contains('hindi'),
-                  'isXtream': true,
-                });
-              }
-            }
-          }
-        } else {
-          final sNum = widget.season ?? 1;
-          final epNum = widget.episode ?? 1;
-          List<dynamic>? sList = _seriesCache[host];
-          if (sList == null) {
-            final uri = Uri.parse('$host/player_api.php').replace(
-              queryParameters: {'username': user, 'password': pass, 'action': 'get_series'},
-            );
-            final r = await http.get(uri, headers: _iptvHeaders).timeout(const Duration(seconds: 20));
-            if (r.statusCode == 200 && jsonDecode(r.body) is List) {
-              sList = jsonDecode(r.body);
-              _seriesCache[host] = sList!;
-            }
-          }
-          if (sList != null && sList.isNotEmpty) {
-            final target = sList.firstWhere(
-              (s) => _clean(s['name']?.toString() ?? '').contains(q),
-              orElse: () => null,
-            );
-            if (target != null) {
-              final infoUri = Uri.parse('$host/player_api.php').replace(
-                queryParameters: {
-                  'username': user,
-                  'password': pass,
-                  'action': 'get_series_info',
-                  'series_id': target['series_id'].toString(),
-                },
-              );
-              final iR = await http.get(infoUri, headers: _iptvHeaders).timeout(const Duration(seconds: 15));
-              if (iR.statusCode == 200) {
-                final eps = jsonDecode(iR.body)['episodes'];
-                if (eps is Map && eps[sNum.toString()] != null) {
-                  final ep = (eps[sNum.toString()] as List).firstWhere(
-                    (e) => e['episode_num'].toString() == epNum.toString(),
-                    orElse: () => null,
-                  );
-                  if (ep != null) {
-                    final isH = _isHindiAudioStream(target['name']?.toString() ?? '') || sName.toLowerCase().contains('hindi');
-                    out.add({
-                      'title': '${target['name']} - S$sNum E$epNum',
-                      'server': sName,
-                      'url': '$host/series/$user/$pass/${ep['id']}.${ep['container_extension'] ?? 'mp4'}',
-                      'isHindi': isH,
-                      'isXtream': true,
-                    });
-                  }
-                }
-              }
-            }
-          }
-        }
-      } catch (_) {}
-    }
-    return out;
-  }
-
-  Future<void> _fetchEverythingInParallel() async {
-    final itemData = Map<String, dynamic>.from(widget.item);
-    if (itemData['id'] == null && itemData['tmdb_id'] != null) itemData['id'] = itemData['tmdb_id'];
-    if (itemData['tmdb_id'] == null && itemData['id'] != null) itemData['tmdb_id'] = itemData['id'];
-
-    final List<dynamic> activeList = List.from(widget.providers);
-    List<dynamic> xtreamStreams = [];
-    List<dynamic> stremioStreams = [];
-    List<dynamic> cloudStreams = [];
-
-    final xtreamTask = _searchXtreamStreams().then((r) {
-      if (r.isNotEmpty && mounted) {
-        xtreamStreams = r;
-        setState(() {
-          streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams];
-          loading = false;
-        });
-      }
-    }).catchError((_) {});
-
-    final stremioTask = _searchStremioStreams().then((r) {
-      if (r.isNotEmpty && mounted) {
-        stremioStreams = r;
-        setState(() {
-          streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams];
-          loading = false;
-        });
-      }
-    }).catchError((_) {});
-
-    final cloudTask = MobileStreamService.getDirectStreams(
-      item: itemData,
-      providers: activeList,
-      season: widget.season,
-      episode: widget.episode,
-    ).then((r) {
-      if (r is List && r.isNotEmpty && mounted) {
-        cloudStreams = r;
-        setState(() {
-          streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams];
-          loading = false;
-        });
-      }
-    }).catchError((_) {});
-
-    await Future.wait([xtreamTask, stremioTask, cloudTask]);
-    if (mounted) {
-      setState(() {
-        streams = [...xtreamStreams, ...stremioStreams, ...cloudStreams];
-        loading = false;
-      });
-    }
-  }
-
-  Future<void> _saveContinueWatching() async {
-    try {
-      final p = await SharedPreferences.getInstance();
-      await p.reload();
-      final decoded = jsonDecode(p.getString('continue_watching_mobile') ?? '[]');
-      if (decoded is List) {
-        var c = List<dynamic>.from(decoded);
-        c.removeWhere((item) => item['tmdb_id'].toString() == widget.item['tmdb_id'].toString());
-        c.insert(0, {
-          'tmdb_id': widget.item['tmdb_id'],
-          'title': widget.item['title'] ?? 'Untitled',
-          'poster': widget.item['poster'] ?? '',
-          'backdrop': widget.item['backdrop'] ?? '',
-          'year': widget.item['year'] ?? '',
-          'rating': widget.item['rating'] ?? '8.0',
-          'isTv': widget.item['isTv'] ?? false,
-        });
-        if (c.length > 15) c = c.sublist(0, 15);
-        await p.setString('continue_watching_mobile', jsonEncode(c));
-        widget.onPlaySaved();
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _playStream(String url) async {
-    await _saveContinueWatching();
-    if (!mounted) return;
-    final nav = Navigator.of(context, rootNavigator: true);
-    final cleanUrl = url.trim();
-    final title = widget.season != null
-        ? '${widget.item['title']} (S${widget.season} E${widget.episode})'
-        : widget.item['title'] ?? 'Playing';
-
-    try {
-      final opened = await _kMedia3PlayerChannel.invokeMethod<bool>('playMedia', {
-        'url': cleanUrl,
-        'title': title,
-        'servers': streams,
-        'userAgent': 'VLC/3.0.18 LibVLC/3.0.18 (Linux; Android 13)',
-      });
-      if (opened == true && mounted) {
-        nav.pop();
-        return;
-      }
-    } catch (_) {}
-
-    nav.pop();
-    nav.push(
-      MaterialPageRoute(
-        builder: (_) => InternalPlayerScreen(
-          videoUrl: cleanUrl,
-          title: title,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final isTv = size.width > 600;
-
-    return Container(
-      padding: EdgeInsets.all(isTv ? 24 : 18),
-      height: size.height * (isTv ? 0.75 : 0.6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            widget.season != null
-                ? '${widget.item['title']} - S${widget.season} E${widget.episode}'
-                : widget.item['title'] ?? 'Select Server',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Colors.white, fontSize: isTv ? 20 : 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          if (loading && streams.isEmpty)
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CircularProgressIndicator(color: Color(0xFF0072D2)),
                     const SizedBox(height: 12),
-                    Text(currentStatus, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                    Text(
+                      _overview,
+                      maxLines: _showEpisodes ? 3 : 5,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13.5,
+                        height: 1.4,
+                      ),
+                    ),
+
+                    // Web Series Seasons & Episodes Section
+                    if (_showEpisodes && _isTv) ...[
+                      const SizedBox(height: 18),
+                      const Divider(color: Colors.white24),
+                      const SizedBox(height: 8),
+                      if (_loadingSeasons)
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: CircularProgressIndicator(
+                              color: Color(0xFFE50914),
+                            ),
+                          ),
+                        )
+                      else ...[
+                        // Season Dropdown
+                        Row(
+                          children: [
+                            const Text(
+                              'Episodes',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (_seasons.isNotEmpty)
+                              DropdownButton<int>(
+                                value: _selectedSeason,
+                                dropdownColor: const Color(0xFF222222),
+                                style: const TextStyle(color: Colors.white),
+                                underline: const SizedBox(),
+                                items: _seasons.map((s) {
+                                  final numVal =
+                                      (s['season_number'] as num?)?.toInt() ??
+                                          1;
+                                  return DropdownMenuItem<int>(
+                                    value: numVal,
+                                    child: Text('Season $numVal'),
+                                  );
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) _loadEpisodes(val);
+                                },
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        if (_loadingEpisodes)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(20),
+                              child: CircularProgressIndicator(
+                                color: Color(0xFFE50914),
+                              ),
+                            ),
+                          )
+                        else
+                          ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: _episodes.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (_, index) {
+                              final ep = _episodes[index];
+                              final epNum =
+                                  (ep['episode_number'] as num?)?.toInt() ??
+                                      (index + 1);
+                              final epName =
+                                  (ep['name'] ?? 'Episode $epNum').toString();
+                              final stillUrl = TmdbService.getPosterUrl(
+                                ep['still_path'],
+                              );
+
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(10),
+                                onTap: () => _openPlayer(
+                                  season: _selectedSeason,
+                                  episode: epNum,
+                                ),
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1E1E1E),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(6),
+                                        child: stillUrl.isNotEmpty
+                                            ? CachedNetworkImage(
+                                                imageUrl: stillUrl,
+                                                width: 110,
+                                                height: 64,
+                                                fit: BoxFit.cover,
+                                              )
+                                            : Container(
+                                                width: 110,
+                                                height: 64,
+                                                color: Colors.black54,
+                                                child: const Icon(
+                                                  Icons.play_circle_outline,
+                                                  color: Colors.white54,
+                                                ),
+                                              ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              '$epNum. $epName',
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              (ep['overview'] ?? '').toString(),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: Colors.white54,
+                                                fontSize: 11.5,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const Icon(
+                                        Icons.play_circle_fill,
+                                        color: Color(0xFFE50914),
+                                        size: 30,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    ],
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),
-            )
-          else if (streams.isEmpty)
-            const Expanded(
-              child: Center(child: Text('No active streams found on servers.', style: TextStyle(color: Colors.white54))),
-            )
-          else
-            Expanded(
-              child: ListView.separated(
-                itemCount: streams.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (ctx, i) {
-                  final s = streams[i];
-                  final isHindi = s['isHindi'] == true;
-                  final isXtream = s['isXtream'] == true;
-                  final isStremio = s['isStremio'] == true;
-                  final String streamTitle = s['title'] ?? '';
-
-                  return InkWell(
-                    onTap: () => _playStream(s['url']),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: EdgeInsets.all(isTv ? 14 : 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E2029),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: isStremio
-                              ? const Color(0xFF8B5CF6)
-                              : (isHindi ? const Color(0xFF10B981) : (isXtream ? const Color(0xFF0072D2) : Colors.white10)),
-                          width: (isStremio || isHindi || isXtream) ? 1.5 : 1.0,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    if (isStremio)
-                                      Container(
-                                        margin: const EdgeInsets.only(right: 6),
-                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                        decoration: BoxDecoration(color: const Color(0xFF8B5CF6), borderRadius: BorderRadius.circular(3)),
-                                        child: const Text('STREMIO', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
-                                      ),
-                                    if (isXtream)
-                                      Container(
-                                        margin: const EdgeInsets.only(right: 6),
-                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                        decoration: BoxDecoration(color: const Color(0xFF0072D2), borderRadius: BorderRadius.circular(3)),
-                                        child: const Text('IPTV', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
-                                      ),
-                                    if (isHindi)
-                                      Container(
-                                        margin: const EdgeInsets.only(right: 6),
-                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                        decoration: BoxDecoration(color: const Color(0xFF10B981), borderRadius: BorderRadius.circular(3)),
-                                        child: const Text('HINDI AUDIO', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.black)),
-                                      ),
-                                    Expanded(
-                                      child: Text(
-                                        streamTitle,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: isTv ? 15 : 13),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  s['server'] ?? '',
-                                  style: TextStyle(
-                                    color: isStremio ? const Color(0xFFA78BFA) : (isXtream ? const Color(0xFF38BDF8) : Colors.white54),
-                                    fontSize: isTv ? 13 : 11,
-                                    fontWeight: (isStremio || isXtream) ? FontWeight.bold : FontWeight.normal,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Icon(
-                            Icons.play_circle_fill,
-                            color: isStremio ? const Color(0xFF8B5CF6) : const Color(0xFF0072D2),
-                            size: isTv ? 32 : 26,
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-        ],
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
