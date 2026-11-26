@@ -8,7 +8,7 @@ class MobileStreamModal extends StatefulWidget {
 
   const MobileStreamModal({super.key, required this.item});
 
-  static void show(BuildContext context, Map<String, dynamic> item) {
+  static void show(BuildContext context, dynamic item) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -16,7 +16,9 @@ class MobileStreamModal extends StatefulWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => MobileStreamModal(item: item),
+      builder: (_) => MobileStreamModal(
+        item: Map<String, dynamic>.from(item as Map),
+      ),
     );
   }
 
@@ -29,8 +31,8 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
   bool _loadingSeasons = false;
   bool _loadingEpisodes = false;
 
-  List> _seasons = [];
-  List> _episodes = [];
+  List<dynamic> _seasons = [];
+  List<dynamic> _episodes = [];
   int _selectedSeason = 1;
 
   bool get _isTv {
@@ -80,12 +82,10 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
 
   Future<void> _onWatchNowPressed() async {
     if (!_isTv) {
-      // Movie: Seedha Internal Player open aur auto-play
       _openPlayer();
       return;
     }
 
-    // Web Series: Seasons aur Episodes load karo
     setState(() {
       _showEpisodes = true;
       _loadingSeasons = true;
@@ -142,7 +142,6 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Top Backdrop Image
               Stack(
                 children: [
                   ClipRRect(
@@ -187,8 +186,6 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                   ),
                 ],
               ),
-
-              // Title, Meta & Watch Now Button
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
@@ -239,8 +236,6 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                       ],
                     ),
                     const SizedBox(height: 14),
-
-                    // Watch Now Button
                     SizedBox(
                       width: double.infinity,
                       height: 46,
@@ -267,7 +262,6 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 12),
                     Text(
                       _overview,
@@ -279,8 +273,6 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                         height: 1.4,
                       ),
                     ),
-
-                    // Web Series Seasons & Episodes Section
                     if (_showEpisodes && _isTv) ...[
                       const SizedBox(height: 18),
                       const Divider(color: Colors.white24),
@@ -295,7 +287,6 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                           ),
                         )
                       else ...[
-                        // Season Dropdown
                         Row(
                           children: [
                             const Text(

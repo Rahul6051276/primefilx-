@@ -15,11 +15,11 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   bool _isLoading = true;
   int _connectedProviders = 0;
 
-  List> _trendingMovies = [];
-  List> _popularMovies = [];
-  List> _topRatedMovies = [];
-  List> _trendingTv = [];
-  List> _popularTv = [];
+  List<dynamic> _trendingMovies = [];
+  List<dynamic> _popularMovies = [];
+  List<dynamic> _topRatedMovies = [];
+  List<dynamic> _trendingTv = [];
+  List<dynamic> _popularTv = [];
 
   @override
   void initState() {
@@ -41,12 +41,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
     if (!mounted) return;
     setState(() {
-      _trendingMovies = results[0] as List>;
-      _popularMovies = results[1] as List>;
-      _topRatedMovies = results[2] as List>;
-      _trendingTv = results[3] as List>;
-      _popularTv = results[4] as List>;
-      _connectedProviders = (results[5] as List).length;
+      _trendingMovies = results[0];
+      _popularMovies = results[1];
+      _topRatedMovies = results[2];
+      _trendingTv = results[3];
+      _popularTv = results[4];
+      _connectedProviders = results[5].length;
       _isLoading = false;
     });
   }
@@ -161,7 +161,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
   void _openSearchSheet() {
     final searchController = TextEditingController();
-    List> results = [];
+    List<dynamic> results = [];
     bool searching = false;
 
     showModalBottomSheet(
@@ -361,7 +361,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  Widget _buildSection(String title, List> items) {
+  Widget _buildSection(String title, List<dynamic> items) {
     if (items.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

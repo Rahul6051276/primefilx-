@@ -22,7 +22,7 @@ class StreamLink {
 
 class StreamService {
   static const String _gistUrlKey = 'saved_gist_raw_url';
-  static List> _cachedProviders = [];
+  static List<dynamic> _cachedProviders = [];
   static final Map<String, List<dynamic>> _xtreamVodCache = {};
   static final Map<String, List<dynamic>> _xtreamSeriesCache = {};
 
@@ -44,7 +44,7 @@ class StreamService {
     return providers.length;
   }
 
-  static Future<List>> loadProviders({
+  static Future<List<dynamic>> loadProviders({
     bool forceRefresh = false,
   }) async {
     if (!forceRefresh && _cachedProviders.isNotEmpty) {
@@ -61,9 +61,8 @@ class StreamService {
       if (res.statusCode == 200) {
         final decoded = json.decode(res.body);
         final list = (decoded['active_providers'] as List? ?? []);
-        _cachedProviders = list
-            .map>((e) => Map<String, dynamic>.from(e))
-            .toList();
+        _cachedProviders =
+            list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
         return _cachedProviders;
       }
     } catch (_) {}
@@ -90,7 +89,8 @@ class StreamService {
         final imdbId = await TmdbService.getImdbId(tmdbId, isTv);
         final List<Future<void>> tasks = [];
 
-        for (final provider in providers) {
+        for (final p in providers) {
+          final provider = Map<String, dynamic>.from(p as Map);
           final type = (provider['type'] ?? '').toString().toLowerCase();
           if (type == 'stremio' && imdbId != null && imdbId.isNotEmpty) {
             tasks.add(_fetchFromStremio(

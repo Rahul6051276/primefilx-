@@ -21,7 +21,7 @@ class TmdbService {
     return '$backdropBaseUrl$path';
   }
 
-  static Future<List>> _fetchList(
+  static Future<List<dynamic>> _fetchList(
     String endpoint, {
     String? forcedMediaType,
   }) async {
@@ -33,8 +33,8 @@ class TmdbService {
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
         final results = (data['results'] as List? ?? []);
-        return results.map>((item) {
-          final map = Map<String, dynamic>.from(item);
+        return results.map((item) {
+          final map = Map<String, dynamic>.from(item as Map);
           if (forcedMediaType != null) {
             map['media_type'] = forcedMediaType;
           }
@@ -45,22 +45,22 @@ class TmdbService {
     return [];
   }
 
-  static Future<List>> getTrendingMovies() =>
+  static Future<List<dynamic>> getTrendingMovies() =>
       _fetchList('/trending/movie/week', forcedMediaType: 'movie');
 
-  static Future<List>> getPopularMovies() =>
+  static Future<List<dynamic>> getPopularMovies() =>
       _fetchList('/movie/popular', forcedMediaType: 'movie');
 
-  static Future<List>> getTopRatedMovies() =>
+  static Future<List<dynamic>> getTopRatedMovies() =>
       _fetchList('/movie/top_rated', forcedMediaType: 'movie');
 
-  static Future<List>> getTrendingTv() =>
+  static Future<List<dynamic>> getTrendingTv() =>
       _fetchList('/trending/tv/week', forcedMediaType: 'tv');
 
-  static Future<List>> getPopularTv() =>
+  static Future<List<dynamic>> getPopularTv() =>
       _fetchList('/tv/popular', forcedMediaType: 'tv');
 
-  static Future<List>> searchMulti(String query) async {
+  static Future<List<dynamic>> searchMulti(String query) async {
     if (query.trim().isEmpty) return [];
     final encoded = Uri.encodeQueryComponent(query.trim());
     final list = await _fetchList('/search/multi?query=$encoded');
@@ -85,7 +85,7 @@ class TmdbService {
     return null;
   }
 
-  static Future<List>> getTvSeasons(int tvId) async {
+  static Future<List<dynamic>> getTvSeasons(int tvId) async {
     if (apiKey.isEmpty) return [];
     try {
       final url = Uri.parse('$_baseUrl/tv/$tvId?api_key=$apiKey');
@@ -94,7 +94,7 @@ class TmdbService {
         final data = json.decode(res.body);
         final seasons = (data['seasons'] as List? ?? []);
         return seasons
-            .map>((s) => Map<String, dynamic>.from(s))
+            .map((s) => Map<String, dynamic>.from(s as Map))
             .where((s) => (s['season_number'] ?? 0) > 0)
             .toList();
       }
@@ -102,7 +102,7 @@ class TmdbService {
     return [];
   }
 
-  static Future<List>> getSeasonEpisodes(
+  static Future<List<dynamic>> getSeasonEpisodes(
     int tvId,
     int seasonNumber,
   ) async {
@@ -116,7 +116,7 @@ class TmdbService {
         final data = json.decode(res.body);
         final episodes = (data['episodes'] as List? ?? []);
         return episodes
-            .map>((e) => Map<String, dynamic>.from(e))
+            .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
       }
     } catch (_) {}
