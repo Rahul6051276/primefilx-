@@ -40,8 +40,8 @@ class _InternalPlayerState extends State<InternalPlayer> {
     _fetchAndLaunchNative();
   }
 
-  List<dynamic> _serializeServers() {
-    final out = >[];
+  List _serializeServers() {
+    final out = [];
     for (final s in _servers) {
       out.add({
         'url': s.url,
