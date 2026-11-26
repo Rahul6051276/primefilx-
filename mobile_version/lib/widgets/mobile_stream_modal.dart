@@ -9,10 +9,17 @@ class MobileStreamModal extends StatefulWidget {
   const MobileStreamModal({super.key, required this.item});
 
   static void show(BuildContext context, dynamic item) {
+    final size = MediaQuery.of(context).size;
+    final isWide = size.width > 600;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF0F171E),
+      constraints: BoxConstraints(
+        maxWidth: isWide ? size.width * 0.85 : size.width,
+        maxHeight: size.height * (isWide ? 0.94 : 0.92),
+      ),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -131,14 +138,16 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
 
   @override
   Widget build(BuildContext context) {
+    final isWide = MediaQuery.of(context).size.width > 600;
+    final backdropHeight = isWide ? 160.0 : 210.0;
     final backdropUrl = TmdbService.getBackdropUrl(
       widget.item['backdrop_path'] ?? widget.item['poster_path'],
     );
 
     return DraggableScrollableSheet(
-      initialChildSize: _showEpisodes ? 0.85 : 0.62,
+      initialChildSize: isWide ? 0.94 : (_showEpisodes ? 0.88 : 0.68),
       minChildSize: 0.5,
-      maxChildSize: 0.92,
+      maxChildSize: 0.96,
       expand: false,
       builder: (ctx, scrollController) {
         return SingleChildScrollView(
@@ -156,17 +165,17 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                     child: backdropUrl.isNotEmpty
                         ? CachedNetworkImage(
                             imageUrl: backdropUrl,
-                            height: 210,
+                            height: backdropHeight,
                             width: double.infinity,
                             fit: BoxFit.cover,
                           )
                         : Container(
-                            height: 210,
+                            height: backdropHeight,
                             color: _cardBg,
                           ),
                   ),
                   Container(
-                    height: 210,
+                    height: backdropHeight,
                     decoration: const BoxDecoration(
                       borderRadius: BorderRadius.vertical(
                         top: Radius.circular(20),
@@ -195,7 +204,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
 
               // Title, Meta & Watch Now
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 18),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -263,7 +272,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                             if (states.contains(WidgetState.focused)) {
                               return const BorderSide(
                                 color: Colors.white,
-                                width: 2.5,
+                                width: 3,
                               );
                             }
                             return BorderSide.none;
@@ -293,7 +302,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                     const SizedBox(height: 12),
                     Text(
                       _overview,
-                      maxLines: _showEpisodes ? 3 : 5,
+                      maxLines: _showEpisodes ? 2 : 4,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white70,
@@ -304,7 +313,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
 
                     // Web Series Seasons & Episodes
                     if (_showEpisodes && _isTv) ...[
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 14),
                       const Divider(color: Colors.white24),
                       const SizedBox(height: 8),
                       if (_loadingSeasons)
@@ -379,7 +388,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
 
                               return InkWell(
                                 borderRadius: BorderRadius.circular(10),
-                                focusColor: _primeBlue.withOpacity(0.35),
+                                focusColor: _primeBlue.withOpacity(0.4),
                                 onTap: () => _openPlayer(
                                   season: _selectedSeason,
                                   episode: epNum,

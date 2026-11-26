@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/tmdb_service.dart';
 import '../services/stream_service.dart';
@@ -63,6 +64,9 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     if (!mounted) return;
 
     final controller = TextEditingController(text: currentUrl);
+    final urlFocus = FocusNode();
+    final saveFocus = FocusNode();
+    final cancelFocus = FocusNode();
     bool isSaving = false;
 
     await showDialog(
@@ -70,11 +74,33 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
+            Future<void> handleSave() async {
+              if (isSaving) return;
+              setDialogState(() => isSaving = true);
+              final count = await StreamService.saveAndConnectGistUrl(
+                controller.text,
+              );
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
+              setState(() => _connectedProviders = count);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor:
+                      count > 0 ? Colors.green.shade700 : Colors.red.shade700,
+                  content: Text(
+                    count > 0
+                        ? 'Connected! $count providers active.'
+                        : 'Connection failed. Raw Gist URL check karein.',
+                  ),
+                ),
+              );
+            }
+
             return AlertDialog(
               backgroundColor: _cardBg,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
-                side: BorderSide(color: _primeBlue.withOpacity(0.4)),
+                side: BorderSide(color: _primeBlue.withOpacity(0.5)),
               ),
               title: const Row(
                 children: [
@@ -86,43 +112,62 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                   ),
                 ],
               ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Apna GitHub Gist Raw JSON URL yahan paste ya type karein:',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
-                    maxLines: 3,
-                    textInputAction: TextInputAction.done,
-                    decoration: InputDecoration(
-                      hintText: 'https://gist.githubusercontent.com/.../raw/...',
-                      hintStyle: const TextStyle(color: Colors.white38),
-                      filled: true,
-                      fillColor: _darkBg,
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(
-                          color: _primeBlue,
-                          width: 2,
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'URL type/paste karein, phir keyboard par ✓ ya Down dabakar Save & Connect karein:',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    const SizedBox(height: 12),
+                    Focus(
+                      onKeyEvent: (node, event) {
+                        if (event is KeyDownEvent &&
+                            event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                          saveFocus.requestFocus();
+                          return KeyEventResult.handled;
+                        }
+                        return KeyEventResult.ignored;
+                      },
+                      child: TextField(
+                        controller: controller,
+                        focusNode: urlFocus,
+                        autofocus: true,
+                        maxLines: 1,
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 14),
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) {
+                          saveFocus.requestFocus();
+                        },
+                        decoration: InputDecoration(
+                          hintText:
+                              'https://gist.githubusercontent.com/.../raw/...',
+                          hintStyle: const TextStyle(color: Colors.white38),
+                          filled: true,
+                          fillColor: _darkBg,
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: _primeBlue,
+                              width: 2.5,
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: Colors.white24),
+                          ),
                         ),
                       ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Colors.white24),
-                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               actions: [
                 TextButton(
+                  focusNode: cancelFocus,
                   style: ButtonStyle(
                     overlayColor: WidgetStateProperty.all(
                       _primeBlue.withOpacity(0.25),
@@ -141,39 +186,21 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                   ),
                 ),
                 ElevatedButton(
+                  focusNode: saveFocus,
                   style: ButtonStyle(
                     backgroundColor: WidgetStateProperty.all(_primeBlue),
                     foregroundColor: WidgetStateProperty.all(Colors.white),
                     side: WidgetStateProperty.resolveWith((states) {
                       if (states.contains(WidgetState.focused)) {
-                        return const BorderSide(color: Colors.white, width: 2.5);
+                        return const BorderSide(
+                          color: Colors.white,
+                          width: 3,
+                        );
                       }
                       return BorderSide.none;
                     }),
                   ),
-                  onPressed: isSaving
-                      ? null
-                      : () async {
-                          setDialogState(() => isSaving = true);
-                          final count = await StreamService.saveAndConnectGistUrl(
-                            controller.text,
-                          );
-                          if (!ctx.mounted) return;
-                          Navigator.pop(ctx);
-                          setState(() => _connectedProviders = count);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              backgroundColor: count > 0
-                                  ? Colors.green.shade700
-                                  : Colors.red.shade700,
-                              content: Text(
-                                count > 0
-                                    ? 'Connected! $count providers active.'
-                                    : 'Connection failed. Raw Gist URL check karein.',
-                              ),
-                            ),
-                          );
-                        },
+                  onPressed: isSaving ? null : handleSave,
                   child: isSaving
                       ? const SizedBox(
                           width: 16,
@@ -183,7 +210,10 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                             color: Colors.white,
                           ),
                         )
-                      : const Text('Save & Connect'),
+                      : const Text(
+                          'Save & Connect',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                 ),
               ],
             );
@@ -191,6 +221,10 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         );
       },
     );
+
+    urlFocus.dispose();
+    saveFocus.dispose();
+    cancelFocus.dispose();
   }
 
   void _openSearchSheet() {
@@ -219,7 +253,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
             }
 
             return SizedBox(
-              height: MediaQuery.of(context).size.height * 0.85,
+              height: MediaQuery.of(context).size.height * 0.9,
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -318,13 +352,13 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         backdrop.isNotEmpty
             ? CachedNetworkImage(
                 imageUrl: backdrop,
-                height: 400,
+                height: 360,
                 width: double.infinity,
                 fit: BoxFit.cover,
               )
-            : Container(height: 400, color: _cardBg),
+            : Container(height: 360, color: _cardBg),
         Container(
-          height: 400,
+          height: 360,
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
@@ -442,8 +476,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _darkBg,
-      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        backgroundColor: const Color(0xE60F171E),
         title: const Text(
           'PRIMEFLIX',
           style: TextStyle(

@@ -32,13 +32,17 @@ class _InternalPlayerState extends State<InternalPlayer> {
 
   late final Player _player;
   late final VideoController _controller;
-  final FocusNode _playerFocusNode = FocusNode();
+
+  final FocusNode _rootFocus = FocusNode();
+  final FocusNode _playBtnFocus = FocusNode();
+  final FocusNode _sliderFocus = FocusNode();
 
   final List<StreamLink> _servers = [];
   StreamSubscription<StreamLink>? _streamSub;
   int _activeServerIndex = -1;
   bool _isSearchingServers = true;
   bool _showControls = true;
+  bool _isSliderFocused = false;
   Timer? _hideTimer;
   BoxFit _videoFit = BoxFit.contain;
 
@@ -47,7 +51,7 @@ class _InternalPlayerState extends State<InternalPlayer> {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
-  // Brightness & Volume Swipe State
+  // Brightness & Volume (up to 200% Boost) Swipe State
   double _brightness = 0.5;
   double _volume = 100.0;
   bool _isDraggingBrightness = false;
@@ -66,6 +70,12 @@ class _InternalPlayerState extends State<InternalPlayer> {
         bufferSize: 32 * 1024 * 1024,
       ),
     );
+
+    // 200% software volume boost enable karne ke liye
+    if (_player.platform is NativePlayer) {
+      (_player.platform as NativePlayer).setProperty('volume-max', '200');
+    }
+
     _controller = VideoController(_player);
 
     _player.stream.playing.listen((v) {
@@ -158,17 +168,34 @@ class _InternalPlayerState extends State<InternalPlayer> {
 
   void _resetHideTimer() {
     _hideTimer?.cancel();
-    _hideTimer = Timer(const Duration(seconds: 4), () {
+    _hideTimer = Timer(const Duration(seconds: 5), () {
       if (mounted && _isPlaying) {
         setState(() => _showControls = false);
+        _rootFocus.requestFocus();
+      }
+    });
+  }
+
+  void _showControlsAndFocus() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    setState(() => _showControls = true);
+    _resetHideTimer();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _showControls) {
+        _playBtnFocus.requestFocus();
       }
     });
   }
 
   void _toggleControls() {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    setState(() => _showControls = !_showControls);
-    if (_showControls) _resetHideTimer();
+    final next = !_showControls;
+    setState(() => _showControls = next);
+    if (next) {
+      _resetHideTimer();
+    } else {
+      _rootFocus.requestFocus();
+    }
   }
 
   void _seekRelative(int seconds) {
@@ -204,7 +231,7 @@ class _InternalPlayerState extends State<InternalPlayer> {
         ScreenBrightness().setApplicationScreenBrightness(newVal);
       } catch (_) {}
     } else if (_isDraggingVolume) {
-      final newVal = (_volume + (delta * 100)).clamp(0.0, 100.0);
+      final newVal = (_volume + (delta * 200)).clamp(0.0, 200.0);
       setState(() => _volume = newVal);
       _player.setVolume(newVal);
     }
@@ -223,31 +250,47 @@ class _InternalPlayerState extends State<InternalPlayer> {
     });
   }
 
-  void _handleKeyEvent(KeyEvent event) {
-    if (event is! KeyDownEvent) return;
+  KeyEventResult _handleRootKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
 
-    if (key == LogicalKeyboardKey.arrowLeft) {
-      setState(() => _showControls = true);
-      _seekRelative(-10);
-    } else if (key == LogicalKeyboardKey.arrowRight) {
-      setState(() => _showControls = true);
-      _seekRelative(10);
-    } else if (key == LogicalKeyboardKey.select ||
-        key == LogicalKeyboardKey.enter ||
-        key == LogicalKeyboardKey.space ||
-        key == LogicalKeyboardKey.mediaPlayPause) {
+    if (key == LogicalKeyboardKey.mediaPlayPause) {
       _player.playOrPause();
-      setState(() => _showControls = true);
-      _resetHideTimer();
-    } else if (key == LogicalKeyboardKey.arrowUp ||
-        key == LogicalKeyboardKey.arrowDown) {
-      setState(() => _showControls = true);
-      _resetHideTimer();
-    } else if (key == LogicalKeyboardKey.goBack ||
-        key == LogicalKeyboardKey.escape) {
-      Navigator.pop(context);
+      _showControlsAndFocus();
+      return KeyEventResult.handled;
     }
+
+    // Jab controls hidden hon tab TV remote direct seek aur controls open kare
+    if (!_showControls) {
+      if (key == LogicalKeyboardKey.arrowLeft) {
+        _seekRelative(-10);
+        _showControlsAndFocus();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowRight) {
+        _seekRelative(10);
+        _showControlsAndFocus();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.select ||
+          key == LogicalKeyboardKey.enter ||
+          key == LogicalKeyboardKey.space) {
+        _player.playOrPause();
+        _showControlsAndFocus();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowUp ||
+          key == LogicalKeyboardKey.arrowDown) {
+        _showControlsAndFocus();
+        return KeyEventResult.handled;
+      }
+    } else {
+      // Controls open hain: har remote press par auto-hide timer reset karo
+      // aur normal D-pad navigation ko buttons par move hone do
+      _resetHideTimer();
+    }
+
+    return KeyEventResult.ignored;
   }
 
   String _formatDuration(Duration d) {
@@ -306,65 +349,23 @@ class _InternalPlayerState extends State<InternalPlayer> {
                           ),
                         ),
                       )
-                    : ListView.builder(
+                    : ListView.separated(
                         shrinkWrap: true,
                         itemCount: _servers.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 6),
                         itemBuilder: (_, i) {
                           final s = _servers[i];
                           final isActive = i == _activeServerIndex;
-                          return ListTile(
-                            dense: true,
-                            autofocus: i == 0,
-                            focusColor: _primeBlue.withOpacity(0.35),
-                            tileColor: isActive
-                                ? _primeBlue.withOpacity(0.2)
-                                : Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            leading: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _primeBlue,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                s.quality,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            title: Text(
-                              s.providerName,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            subtitle: Text(
-                              s.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white60,
-                                fontSize: 12,
-                              ),
-                            ),
-                            trailing: isActive
-                                ? const Icon(
-                                    Icons.check_circle,
-                                    color: _primeBlue,
-                                  )
-                                : const Icon(
-                                    Icons.play_arrow,
-                                    color: Colors.white70,
-                                  ),
+                          final shouldAutofocus =
+                              _activeServerIndex >= 0
+                                  ? i == _activeServerIndex
+                                  : i == 0;
+                          return _TvFocusableListItem(
+                            autofocus: shouldAutofocus,
+                            isActive: isActive,
+                            quality: s.quality,
+                            title: s.providerName,
+                            subtitle: s.title,
                             onTap: () {
                               Navigator.pop(ctx);
                               _playServer(i);
@@ -431,7 +432,8 @@ class _InternalPlayerState extends State<InternalPlayer> {
                                     _player.state.track.audio.id == t.id;
                                 return ListTile(
                                   dense: true,
-                                  focusColor: _primeBlue.withOpacity(0.35),
+                                  autofocus: selected,
+                                  focusColor: _primeBlue.withOpacity(0.45),
                                   title: Text(
                                     t.title ?? t.language ?? 'Track ${t.id}',
                                     style: TextStyle(
@@ -473,7 +475,7 @@ class _InternalPlayerState extends State<InternalPlayer> {
                               _player.state.track.subtitle.id == t.id;
                           return ListTile(
                             dense: true,
-                            focusColor: _primeBlue.withOpacity(0.35),
+                            focusColor: _primeBlue.withOpacity(0.45),
                             title: Text(
                               t.id == 'no'
                                   ? 'Off'
@@ -505,7 +507,9 @@ class _InternalPlayerState extends State<InternalPlayer> {
     _hideTimer?.cancel();
     _indicatorTimer?.cancel();
     _streamSub?.cancel();
-    _playerFocusNode.dispose();
+    _rootFocus.dispose();
+    _playBtnFocus.dispose();
+    _sliderFocus.dispose();
     _player.dispose();
     _exitFullscreen();
     super.dispose();
@@ -517,12 +521,15 @@ class _InternalPlayerState extends State<InternalPlayer> {
         ? '${widget.title} • S${widget.season ?? 1}E${widget.episode ?? 1}'
         : widget.title;
 
+    final isBoosted = _isDraggingVolume && _volume > 100.0;
+    final indicatorColor = isBoosted ? Colors.orangeAccent : _primeBlue;
+
     return Scaffold(
       backgroundColor: Colors.black,
-      body: KeyboardListener(
-        focusNode: _playerFocusNode,
+      body: Focus(
+        focusNode: _rootFocus,
         autofocus: true,
-        onKeyEvent: _handleKeyEvent,
+        onKeyEvent: _handleRootKeyEvent,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: _toggleControls,
@@ -539,7 +546,7 @@ class _InternalPlayerState extends State<InternalPlayer> {
                 controls: NoVideoControls,
               ),
 
-              // Brightness / Volume Swipe Indicator
+              // Brightness / Volume (200% Boost) Swipe Indicator
               if (_showSwipeIndicator)
                 Center(
                   child: Container(
@@ -551,7 +558,7 @@ class _InternalPlayerState extends State<InternalPlayer> {
                       color: Colors.black87,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: _primeBlue.withOpacity(0.6),
+                        color: indicatorColor.withOpacity(0.7),
                         width: 1.2,
                       ),
                     ),
@@ -564,7 +571,7 @@ class _InternalPlayerState extends State<InternalPlayer> {
                               : (_volume <= 0
                                   ? Icons.volume_off
                                   : Icons.volume_up),
-                          color: _primeBlue,
+                          color: indicatorColor,
                           size: 26,
                         ),
                         const SizedBox(width: 12),
@@ -573,9 +580,9 @@ class _InternalPlayerState extends State<InternalPlayer> {
                           child: LinearProgressIndicator(
                             value: _isDraggingBrightness
                                 ? _brightness
-                                : (_volume / 100.0),
+                                : (_volume / 200.0).clamp(0.0, 1.0),
                             backgroundColor: Colors.white24,
-                            color: _primeBlue,
+                            color: indicatorColor,
                             minHeight: 6,
                             borderRadius: BorderRadius.circular(4),
                           ),
@@ -585,8 +592,9 @@ class _InternalPlayerState extends State<InternalPlayer> {
                           _isDraggingBrightness
                               ? '${(_brightness * 100).round()}%'
                               : '${_volume.round()}%',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color:
+                                isBoosted ? Colors.orangeAccent : Colors.white,
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
                           ),
@@ -625,6 +633,7 @@ class _InternalPlayerState extends State<InternalPlayer> {
                       ),
                       const SizedBox(height: 14),
                       ElevatedButton(
+                        autofocus: true,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _primeBlue,
                           foregroundColor: Colors.white,
@@ -640,7 +649,7 @@ class _InternalPlayerState extends State<InternalPlayer> {
                   child: CircularProgressIndicator(color: _primeBlue),
                 ),
 
-              // PrimeFlix Controls Overlay
+              // PrimeFlix Controls Overlay (TV Remote + Touch Friendly)
               if (_showControls)
                 Container(
                   decoration: const BoxDecoration(
@@ -667,11 +676,11 @@ class _InternalPlayerState extends State<InternalPlayer> {
                           // Top Bar
                           Row(
                             children: [
-                              IconButton(
-                                icon: const Icon(Icons.arrow_back,
-                                    color: Colors.white),
+                              _TvPlayerIconButton(
+                                icon: Icons.arrow_back,
                                 onPressed: () => Navigator.pop(context),
                               ),
+                              const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   displayTitle,
@@ -684,35 +693,28 @@ class _InternalPlayerState extends State<InternalPlayer> {
                                   ),
                                 ),
                               ),
-                              TextButton.icon(
+                              _TvPlayerTextButton(
+                                icon: Icons.dns,
+                                label: 'Servers (${_servers.length})',
                                 onPressed: _showServersSheet,
-                                icon: const Icon(Icons.dns,
-                                    color: _primeBlue, size: 18),
-                                label: Text(
-                                  'Servers (${_servers.length})',
-                                  style: const TextStyle(color: Colors.white),
-                                ),
                               ),
-                              IconButton(
-                                tooltip: 'Audio & Subtitles',
-                                icon: const Icon(Icons.subtitles,
-                                    color: Colors.white),
+                              const SizedBox(width: 6),
+                              _TvPlayerIconButton(
+                                icon: Icons.subtitles,
                                 onPressed: _showTracksSheet,
                               ),
-                              IconButton(
-                                tooltip: 'Aspect Ratio',
-                                icon: Icon(
-                                  _videoFit == BoxFit.contain
-                                      ? Icons.fit_screen
-                                      : Icons.zoom_out_map,
-                                  color: Colors.white,
-                                ),
+                              const SizedBox(width: 6),
+                              _TvPlayerIconButton(
+                                icon: _videoFit == BoxFit.contain
+                                    ? Icons.fit_screen
+                                    : Icons.zoom_out_map,
                                 onPressed: () {
                                   setState(() {
                                     _videoFit = _videoFit == BoxFit.contain
                                         ? BoxFit.cover
                                         : BoxFit.contain;
                                   });
+                                  _resetHideTimer();
                                 },
                               ),
                             ],
@@ -722,90 +724,391 @@ class _InternalPlayerState extends State<InternalPlayer> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              IconButton(
+                              _TvPlayerIconButton(
+                                icon: Icons.replay_10,
                                 iconSize: 38,
-                                icon: const Icon(Icons.replay_10,
-                                    color: Colors.white),
                                 onPressed: () => _seekRelative(-10),
                               ),
                               const SizedBox(width: 36),
-                              IconButton(
-                                iconSize: 56,
-                                icon: Icon(
-                                  _isPlaying
-                                      ? Icons.pause_circle_filled
-                                      : Icons.play_circle_filled,
-                                  color: _primeBlue,
-                                ),
+                              _TvPlayerIconButton(
+                                focusNode: _playBtnFocus,
+                                autofocus: true,
+                                icon: _isPlaying
+                                    ? Icons.pause_circle_filled
+                                    : Icons.play_circle_filled,
+                                iconSize: 58,
+                                iconColor: _primeBlue,
                                 onPressed: () {
                                   _player.playOrPause();
                                   _resetHideTimer();
                                 },
                               ),
                               const SizedBox(width: 36),
-                              IconButton(
+                              _TvPlayerIconButton(
+                                icon: Icons.forward_10,
                                 iconSize: 38,
-                                icon: const Icon(Icons.forward_10,
-                                    color: Colors.white),
                                 onPressed: () => _seekRelative(10),
                               ),
                             ],
                           ),
 
-                          // Bottom Progress Bar
-                          Row(
-                            children: [
-                              Text(
-                                _formatDuration(_position),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
+                          // Bottom Progress Bar (TV Remote Left/Right Seek)
+                          Focus(
+                            focusNode: _sliderFocus,
+                            onFocusChange: (f) {
+                              if (mounted) {
+                                setState(() => _isSliderFocused = f);
+                              }
+                            },
+                            onKeyEvent: (node, event) {
+                              if (event is KeyDownEvent ||
+                                  event is KeyRepeatEvent) {
+                                if (event.logicalKey ==
+                                    LogicalKeyboardKey.arrowLeft) {
+                                  _seekRelative(-15);
+                                  return KeyEventResult.handled;
+                                }
+                                if (event.logicalKey ==
+                                    LogicalKeyboardKey.arrowRight) {
+                                  _seekRelative(15);
+                                  return KeyEventResult.handled;
+                                }
+                              }
+                              return KeyEventResult.ignored;
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _isSliderFocused
+                                    ? _primeBlue.withOpacity(0.18)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: _isSliderFocused
+                                      ? Colors.white
+                                      : Colors.transparent,
+                                  width: 2,
                                 ),
                               ),
-                              Expanded(
-                                child: SliderTheme(
-                                  data: SliderTheme.of(context).copyWith(
-                                    activeTrackColor: _primeBlue,
-                                    inactiveTrackColor: Colors.white30,
-                                    thumbColor: _primeBlue,
-                                    trackHeight: 3.5,
+                              child: Row(
+                                children: [
+                                  Text(
+                                    _formatDuration(_position),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                  child: Slider(
-                                    min: 0,
-                                    max: _duration.inMilliseconds > 0
-                                        ? _duration.inMilliseconds.toDouble()
-                                        : 1,
-                                    value: _position.inMilliseconds
-                                        .clamp(
-                                          0,
-                                          _duration.inMilliseconds > 0
+                                  Expanded(
+                                    child: ExcludeFocus(
+                                      child: SliderTheme(
+                                        data: SliderTheme.of(context).copyWith(
+                                          activeTrackColor: _primeBlue,
+                                          inactiveTrackColor: Colors.white30,
+                                          thumbColor: _isSliderFocused
+                                              ? Colors.white
+                                              : _primeBlue,
+                                          trackHeight:
+                                              _isSliderFocused ? 5.5 : 3.5,
+                                        ),
+                                        child: Slider(
+                                          min: 0,
+                                          max: _duration.inMilliseconds > 0
                                               ? _duration.inMilliseconds
+                                                  .toDouble()
                                               : 1,
-                                        )
-                                        .toDouble(),
-                                    onChanged: (val) {
-                                      _player.seek(
-                                        Duration(milliseconds: val.toInt()),
-                                      );
-                                      _resetHideTimer();
-                                    },
+                                          value: _position.inMilliseconds
+                                              .clamp(
+                                                0,
+                                                _duration.inMilliseconds > 0
+                                                    ? _duration.inMilliseconds
+                                                    : 1,
+                                              )
+                                              .toDouble(),
+                                          onChanged: (val) {
+                                            _player.seek(
+                                              Duration(
+                                                milliseconds: val.toInt(),
+                                              ),
+                                            );
+                                            _resetHideTimer();
+                                          },
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                ),
+                                  Text(
+                                    _formatDuration(_duration),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              Text(
-                                _formatDuration(_duration),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ),
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TvPlayerIconButton extends StatefulWidget {
+  final IconData icon;
+  final double iconSize;
+  final Color iconColor;
+  final VoidCallback onPressed;
+  final FocusNode? focusNode;
+  final bool autofocus;
+
+  const _TvPlayerIconButton({
+    required this.icon,
+    required this.onPressed,
+    this.iconSize = 26,
+    this.iconColor = Colors.white,
+    this.focusNode,
+    this.autofocus = false,
+  });
+
+  @override
+  State<_TvPlayerIconButton> createState() => _TvPlayerIconButtonState();
+}
+
+class _TvPlayerIconButtonState extends State<_TvPlayerIconButton> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      focusNode: widget.focusNode,
+      autofocus: widget.autofocus,
+      onFocusChange: (f) {
+        if (mounted) setState(() => _focused = f);
+      },
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            (event.logicalKey == LogicalKeyboardKey.select ||
+                event.logicalKey == LogicalKeyboardKey.enter ||
+                event.logicalKey == LogicalKeyboardKey.space)) {
+          widget.onPressed();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: InkWell(
+        borderRadius: BorderRadius.circular(40),
+        onTap: widget.onPressed,
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _focused ? Colors.white.withOpacity(0.22) : Colors.transparent,
+            border: Border.all(
+              color: _focused ? Colors.white : Colors.transparent,
+              width: 2.5,
+            ),
+          ),
+          child: Icon(
+            widget.icon,
+            size: widget.iconSize,
+            color: widget.iconColor,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TvPlayerTextButton extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  const _TvPlayerTextButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  @override
+  State<_TvPlayerTextButton> createState() => _TvPlayerTextButtonState();
+}
+
+class _TvPlayerTextButtonState extends State<_TvPlayerTextButton> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      onFocusChange: (f) {
+        if (mounted) setState(() => _focused = f);
+      },
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            (event.logicalKey == LogicalKeyboardKey.select ||
+                event.logicalKey == LogicalKeyboardKey.enter)) {
+          widget.onPressed();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: widget.onPressed,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: _focused
+                ? const Color(0xFF00A8E1)
+                : Colors.white.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: _focused ? Colors.white : Colors.transparent,
+              width: 2,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                widget.icon,
+                color: _focused ? Colors.white : const Color(0xFF00A8E1),
+                size: 18,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                widget.label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TvFocusableListItem extends StatefulWidget {
+  final bool autofocus;
+  final bool isActive;
+  final String quality;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _TvFocusableListItem({
+    required this.autofocus,
+    required this.isActive,
+    required this.quality,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  State<_TvFocusableListItem> createState() => _TvFocusableListItemState();
+}
+
+class _TvFocusableListItemState extends State<_TvFocusableListItem> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      autofocus: widget.autofocus,
+      onFocusChange: (f) {
+        if (mounted) setState(() => _focused = f);
+      },
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            (event.logicalKey == LogicalKeyboardKey.select ||
+                event.logicalKey == LogicalKeyboardKey.enter)) {
+          widget.onTap();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: _focused
+                ? const Color(0xFF00A8E1).withOpacity(0.3)
+                : (widget.isActive
+                    ? const Color(0xFF00A8E1).withOpacity(0.14)
+                    : const Color(0xFF1A242F)),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: _focused ? Colors.white : Colors.transparent,
+              width: 2,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00A8E1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  widget.quality,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      widget.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                widget.isActive ? Icons.check_circle : Icons.play_arrow,
+                color: widget.isActive
+                    ? const Color(0xFF00A8E1)
+                    : Colors.white70,
+              ),
             ],
           ),
         ),
