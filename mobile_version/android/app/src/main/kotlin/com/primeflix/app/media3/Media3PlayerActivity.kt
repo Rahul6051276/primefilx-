@@ -1,5 +1,6 @@
 package com.primeflix.app.media3
 
+import android.app.AlertDialog
 import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
@@ -132,7 +133,11 @@ class Media3PlayerActivity : AppCompatActivity() {
         if (uiModeManager?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION) {
             return true
         }
-        return packageManager.hasSystemFeature("android.software.leanback")
+        if (packageManager.hasSystemFeature("android.software.leanback")) {
+            return true
+        }
+        val smallestWidthDp = resources.configuration.smallestScreenWidthDp
+        return smallestWidthDp >= 600
     }
 
     private fun hideSystemUi() {
@@ -737,7 +742,7 @@ class Media3PlayerActivity : AppCompatActivity() {
             "[${s.quality}] ${s.providerName}$active"
         }.toTypedArray()
 
-        android.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle("Select Server (${servers.size})")
             .setSingleChoiceItems(labels, activeIndex.coerceAtLeast(0)) { dlg, which ->
                 dlg.dismiss()
@@ -750,7 +755,7 @@ class Media3PlayerActivity : AppCompatActivity() {
         val exo = exoPlayer ?: return
         val choices = collectTrackChoices(exo, exo.currentTracks, C.TRACK_TYPE_AUDIO, includeOff = false)
         if (choices.isEmpty()) {
-            android.app.AlertDialog.Builder(this)
+            AlertDialog.Builder(this)
                 .setTitle("Audio Track")
                 .setMessage("No multiple audio tracks found in this stream.")
                 .setPositiveButton("OK", null)
@@ -758,7 +763,7 @@ class Media3PlayerActivity : AppCompatActivity() {
             return
         }
         val names = choices.map { it.label }.toTypedArray()
-        android.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle("Select Audio Track")
             .setItems(names) { dlg, which ->
                 choices[which].onSelect()
