@@ -69,7 +69,6 @@ class TmdbService {
         .toList();
   }
 
-  /// Stremio addons (jaise PenguPlay) ke liye IMDb ID nikalta hai
   static Future<String?> getImdbId(int tmdbId, bool isTv) async {
     if (apiKey.isEmpty) return null;
     try {
@@ -86,7 +85,6 @@ class TmdbService {
     return null;
   }
 
-  /// Web Series ke total seasons fetch karta hai
   static Future<List>> getTvSeasons(int tvId) async {
     if (apiKey.isEmpty) return [];
     try {
@@ -104,7 +102,6 @@ class TmdbService {
     return [];
   }
 
-  /// Kisi specific season ke saare episodes fetch karta hai
   static Future<List>> getSeasonEpisodes(
     int tvId,
     int seasonNumber,

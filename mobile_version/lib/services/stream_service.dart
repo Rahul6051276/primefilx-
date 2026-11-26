@@ -31,7 +31,6 @@ class StreamService {
     return prefs.getString(_gistUrlKey) ?? '';
   }
 
-  /// Gist Raw URL save karta hai aur turant providers load karke count return karta hai
   static Future<int> saveAndConnectGistUrl(String rawUrl) async {
     final cleanUrl = rawUrl.trim();
     final prefs = await SharedPreferences.getInstance();
@@ -62,15 +61,15 @@ class StreamService {
       if (res.statusCode == 200) {
         final decoded = json.decode(res.body);
         final list = (decoded['active_providers'] as List? ?? []);
-        _cachedProviders =
-            list.map>((e) => Map<String, dynamic>.from(e)).toList();
+        _cachedProviders = list
+            .map>((e) => Map<String, dynamic>.from(e))
+            .toList();
         return _cachedProviders;
       }
     } catch (_) {}
     return [];
   }
 
-  /// Saare providers (Stremio + Xtream) ko ek saath hit karta hai aur jo pehle mile usko yield karta hai
   static Stream<StreamLink> fetchStreams({
     required int tmdbId,
     required String title,
