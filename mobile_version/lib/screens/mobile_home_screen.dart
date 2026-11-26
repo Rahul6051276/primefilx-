@@ -12,14 +12,19 @@ class MobileHomeScreen extends StatefulWidget {
 }
 
 class _MobileHomeScreenState extends State<MobileHomeScreen> {
+  static const Color _primeBlue = Color(0xFF00A8E1);
+  static const Color _darkBg = Color(0xFF0F171E);
+  static const Color _cardBg = Color(0xFF1A242F);
+
   bool _isLoading = true;
   int _connectedProviders = 0;
 
-  List<dynamic> _trendingMovies = [];
-  List<dynamic> _popularMovies = [];
-  List<dynamic> _topRatedMovies = [];
-  List<dynamic> _trendingTv = [];
-  List<dynamic> _popularTv = [];
+  List<dynamic> _bollywoodMovies = [];
+  List<dynamic> _southMovies = [];
+  List<dynamic> _hollywoodMovies = [];
+  List<dynamic> _hindiWebSeries = [];
+  List<dynamic> _netflixWebSeries = [];
+  List<dynamic> _amazonWebSeries = [];
 
   @override
   void initState() {
@@ -31,22 +36,24 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     setState(() => _isLoading = true);
 
     final results = await Future.wait([
-      TmdbService.getTrendingMovies(),
-      TmdbService.getPopularMovies(),
-      TmdbService.getTopRatedMovies(),
-      TmdbService.getTrendingTv(),
-      TmdbService.getPopularTv(),
+      TmdbService.getLatestBollywoodMovies(),
+      TmdbService.getLatestSouthMovies(),
+      TmdbService.getLatestHollywoodMovies(),
+      TmdbService.getLatestHindiWebSeries(),
+      TmdbService.getLatestNetflixWebSeries(),
+      TmdbService.getLatestAmazonWebSeries(),
       StreamService.loadProviders(),
     ]);
 
     if (!mounted) return;
     setState(() {
-      _trendingMovies = results[0];
-      _popularMovies = results[1];
-      _topRatedMovies = results[2];
-      _trendingTv = results[3];
-      _popularTv = results[4];
-      _connectedProviders = results[5].length;
+      _bollywoodMovies = results[0];
+      _southMovies = results[1];
+      _hollywoodMovies = results[2];
+      _hindiWebSeries = results[3];
+      _netflixWebSeries = results[4];
+      _amazonWebSeries = results[5];
+      _connectedProviders = results[6].length;
       _isLoading = false;
     });
   }
@@ -64,13 +71,14 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
             return AlertDialog(
-              backgroundColor: const Color(0xFF181818),
+              backgroundColor: _cardBg,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
+                side: BorderSide(color: _primeBlue.withOpacity(0.4)),
               ),
               title: const Row(
                 children: [
-                  Icon(Icons.link, color: Color(0xFFE50914)),
+                  Icon(Icons.link, color: _primeBlue),
                   SizedBox(width: 8),
                   Text(
                     'Gist Raw URL Setup',
@@ -83,20 +91,29 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Apna GitHub Gist Raw JSON URL yahan paste karein:',
+                    'Apna GitHub Gist Raw JSON URL yahan paste ya type karein:',
                     style: TextStyle(color: Colors.white70, fontSize: 13),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: controller,
+                    autofocus: true,
                     style: const TextStyle(color: Colors.white, fontSize: 13),
                     maxLines: 3,
+                    textInputAction: TextInputAction.done,
                     decoration: InputDecoration(
                       hintText: 'https://gist.githubusercontent.com/.../raw/...',
                       hintStyle: const TextStyle(color: Colors.white38),
                       filled: true,
-                      fillColor: const Color(0xFF0E0E0E),
-                      border: OutlineInputBorder(
+                      fillColor: _darkBg,
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                          color: _primeBlue,
+                          width: 2,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: const BorderSide(color: Colors.white24),
                       ),
@@ -106,16 +123,33 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               ),
               actions: [
                 TextButton(
+                  style: ButtonStyle(
+                    overlayColor: WidgetStateProperty.all(
+                      _primeBlue.withOpacity(0.25),
+                    ),
+                    side: WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.focused)) {
+                        return const BorderSide(color: Colors.white, width: 2);
+                      }
+                      return BorderSide.none;
+                    }),
+                  ),
                   onPressed: isSaving ? null : () => Navigator.pop(ctx),
                   child: const Text(
                     'Cancel',
-                    style: TextStyle(color: Colors.white60),
+                    style: TextStyle(color: Colors.white70),
                   ),
                 ),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE50914),
-                    foregroundColor: Colors.white,
+                  style: ButtonStyle(
+                    backgroundColor: WidgetStateProperty.all(_primeBlue),
+                    foregroundColor: WidgetStateProperty.all(Colors.white),
+                    side: WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.focused)) {
+                        return const BorderSide(color: Colors.white, width: 2.5);
+                      }
+                      return BorderSide.none;
+                    }),
                   ),
                   onPressed: isSaving
                       ? null
@@ -167,7 +201,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF101010),
+      backgroundColor: _darkBg,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
@@ -202,12 +236,18 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                         prefixIcon:
                             const Icon(Icons.search, color: Colors.white70),
                         suffixIcon: IconButton(
+                          focusColor: _primeBlue.withOpacity(0.4),
                           icon: const Icon(Icons.arrow_forward,
-                              color: Color(0xFFE50914)),
+                              color: _primeBlue),
                           onPressed: () => runSearch(searchController.text),
                         ),
                         filled: true,
-                        fillColor: const Color(0xFF1E1E1E),
+                        fillColor: _cardBg,
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide:
+                              const BorderSide(color: _primeBlue, width: 2),
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                           borderSide: BorderSide.none,
@@ -219,7 +259,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                       child: searching
                           ? const Center(
                               child: CircularProgressIndicator(
-                                color: Color(0xFFE50914),
+                                color: _primeBlue,
                               ),
                             )
                           : results.isEmpty
@@ -240,39 +280,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                                   itemCount: results.length,
                                   itemBuilder: (_, i) {
                                     final item = results[i];
-                                    final poster = TmdbService.getPosterUrl(
-                                      item['poster_path'],
-                                    );
-                                    return GestureDetector(
+                                    return _FocusablePosterCard(
+                                      item: item,
                                       onTap: () {
                                         Navigator.pop(ctx);
                                         MobileStreamModal.show(context, item);
                                       },
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: poster.isNotEmpty
-                                            ? CachedNetworkImage(
-                                                imageUrl: poster,
-                                                fit: BoxFit.cover,
-                                              )
-                                            : Container(
-                                                color: Colors.grey.shade900,
-                                                alignment: Alignment.center,
-                                                padding:
-                                                    const EdgeInsets.all(6),
-                                                child: Text(
-                                                  (item['title'] ??
-                                                          item['name'] ??
-                                                          '')
-                                                      .toString(),
-                                                  textAlign: TextAlign.center,
-                                                  style: const TextStyle(
-                                                    color: Colors.white70,
-                                                    fontSize: 12,
-                                                  ),
-                                                ),
-                                              ),
-                                      ),
                                     );
                                   },
                                 ),
@@ -288,8 +301,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   Widget _buildHeroBanner() {
-    if (_trendingMovies.isEmpty) return const SizedBox.shrink();
-    final hero = _trendingMovies.first;
+    final heroList = _bollywoodMovies.isNotEmpty
+        ? _bollywoodMovies
+        : (_hollywoodMovies.isNotEmpty ? _hollywoodMovies : _southMovies);
+    if (heroList.isEmpty) return const SizedBox.shrink();
+
+    final hero = heroList.first;
     final backdrop = TmdbService.getBackdropUrl(
       hero['backdrop_path'] ?? hero['poster_path'],
     );
@@ -301,13 +318,13 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         backdrop.isNotEmpty
             ? CachedNetworkImage(
                 imageUrl: backdrop,
-                height: 420,
+                height: 400,
                 width: double.infinity,
                 fit: BoxFit.cover,
               )
-            : Container(height: 420, color: Colors.black),
+            : Container(height: 400, color: _cardBg),
         Container(
-          height: 420,
+          height: 400,
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
@@ -315,7 +332,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               colors: [
                 Colors.black54,
                 Colors.transparent,
-                Color(0xFF0A0A0A),
+                _darkBg,
               ],
             ),
           ),
@@ -336,15 +353,23 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               ),
               const SizedBox(height: 12),
               ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFE50914),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 28,
-                    vertical: 12,
+                autofocus: true,
+                style: ButtonStyle(
+                  backgroundColor: WidgetStateProperty.all(_primeBlue),
+                  foregroundColor: WidgetStateProperty.all(Colors.white),
+                  padding: WidgetStateProperty.all(
+                    const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                  side: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.focused)) {
+                      return const BorderSide(color: Colors.white, width: 2.5);
+                    }
+                    return BorderSide.none;
+                  }),
+                  shape: WidgetStateProperty.all(
+                    RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
                 onPressed: () => MobileStreamModal.show(context, hero),
@@ -368,46 +393,42 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
-          child: Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+          child: Row(
+            children: [
+              Container(
+                width: 4,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: _primeBlue,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ),
         ),
         SizedBox(
-          height: 180,
+          height: 186,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             itemCount: items.length,
             separatorBuilder: (_, __) => const SizedBox(width: 10),
             itemBuilder: (_, index) {
               final item = items[index];
-              final posterUrl = TmdbService.getPosterUrl(item['poster_path']);
-              return GestureDetector(
-                onTap: () => MobileStreamModal.show(context, item),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: posterUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: posterUrl,
-                          width: 120,
-                          height: 180,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(
-                            width: 120,
-                            color: Colors.grey.shade900,
-                          ),
-                        )
-                      : Container(
-                          width: 120,
-                          color: Colors.grey.shade900,
-                          alignment: Alignment.center,
-                          child: const Icon(Icons.movie, color: Colors.white38),
-                        ),
+              return SizedBox(
+                width: 122,
+                child: _FocusablePosterCard(
+                  item: item,
+                  onTap: () => MobileStreamModal.show(context, item),
                 ),
               );
             },
@@ -420,43 +441,57 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: _darkBg,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text(
           'PRIMEFLIX',
           style: TextStyle(
-            color: Color(0xFFE50914),
+            color: _primeBlue,
             fontWeight: FontWeight.w900,
-            letterSpacing: 1.5,
+            letterSpacing: 1.8,
           ),
         ),
         actions: [
           IconButton(
             tooltip: 'Search',
+            focusColor: _primeBlue.withOpacity(0.4),
             icon: const Icon(Icons.search, color: Colors.white),
             onPressed: _openSearchSheet,
           ),
           TextButton.icon(
+            style: ButtonStyle(
+              overlayColor: WidgetStateProperty.all(
+                _primeBlue.withOpacity(0.3),
+              ),
+              side: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.focused)) {
+                  return const BorderSide(color: _primeBlue, width: 2);
+                }
+                return BorderSide.none;
+              }),
+            ),
             onPressed: _showGistUrlDialog,
             icon: Icon(
               Icons.link,
-              color: _connectedProviders > 0
-                  ? Colors.greenAccent
-                  : const Color(0xFFE50914),
+              color: _connectedProviders > 0 ? Colors.greenAccent : _primeBlue,
             ),
             label: Text(
-              _connectedProviders > 0 ? 'Gist ($_connectedProviders)' : 'Add Gist',
+              _connectedProviders > 0
+                  ? 'Gist ($_connectedProviders)'
+                  : 'Add Gist',
               style: const TextStyle(color: Colors.white, fontSize: 12),
             ),
           ),
+          const SizedBox(width: 6),
         ],
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFFE50914)),
+              child: CircularProgressIndicator(color: _primeBlue),
             )
           : RefreshIndicator(
-              color: const Color(0xFFE50914),
+              color: _primeBlue,
               onRefresh: _initData,
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -464,16 +499,94 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildHeroBanner(),
-                    _buildSection('Trending Movies', _trendingMovies),
-                    _buildSection('Trending Web Series', _trendingTv),
-                    _buildSection('Popular Movies', _popularMovies),
-                    _buildSection('Popular Web Series', _popularTv),
-                    _buildSection('Top Rated Movies', _topRatedMovies),
-                    const SizedBox(height: 30),
+                    _buildSection('Latest Bollywood Movies', _bollywoodMovies),
+                    _buildSection('Latest South Movies', _southMovies),
+                    _buildSection('Latest Hollywood Movies', _hollywoodMovies),
+                    _buildSection('Latest Hindi Web Series', _hindiWebSeries),
+                    _buildSection(
+                        'Latest Netflix Web Series', _netflixWebSeries),
+                    _buildSection(
+                        'Latest Amazon Prime Web Series', _amazonWebSeries),
+                    const SizedBox(height: 32),
                   ],
                 ),
               ),
             ),
+    );
+  }
+}
+
+class _FocusablePosterCard extends StatefulWidget {
+  final dynamic item;
+  final VoidCallback onTap;
+
+  const _FocusablePosterCard({
+    required this.item,
+    required this.onTap,
+  });
+
+  @override
+  State<_FocusablePosterCard> createState() => _FocusablePosterCardState();
+}
+
+class _FocusablePosterCardState extends State<_FocusablePosterCard> {
+  bool _isFocused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final posterUrl = TmdbService.getPosterUrl(widget.item['poster_path']);
+
+    return Focus(
+      onFocusChange: (focused) {
+        if (mounted) setState(() => _isFocused = focused);
+      },
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: _isFocused ? const Color(0xFF00A8E1) : Colors.transparent,
+              width: _isFocused ? 3 : 0,
+            ),
+            boxShadow: _isFocused
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFF00A8E1).withOpacity(0.5),
+                      blurRadius: 10,
+                    ),
+                  ]
+                : [],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: posterUrl.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: posterUrl,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(
+                      color: const Color(0xFF1A242F),
+                    ),
+                  )
+                : Container(
+                    color: const Color(0xFF1A242F),
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.all(6),
+                    child: Text(
+                      (widget.item['title'] ?? widget.item['name'] ?? '')
+                          .toString(),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -4,7 +4,7 @@ import '../internal_player.dart';
 import '../services/tmdb_service.dart';
 
 class MobileStreamModal extends StatefulWidget {
-  final Map<String, dynamic> item;
+  final Map item;
 
   const MobileStreamModal({super.key, required this.item});
 
@@ -12,12 +12,12 @@ class MobileStreamModal extends StatefulWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF141414),
+      backgroundColor: const Color(0xFF0F171E),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => MobileStreamModal(
-        item: Map<String, dynamic>.from(item as Map),
+        item: Map.from(item as Map),
       ),
     );
   }
@@ -27,6 +27,10 @@ class MobileStreamModal extends StatefulWidget {
 }
 
 class _MobileStreamModalState extends State<MobileStreamModal> {
+  static const Color _primeBlue = Color(0xFF00A8E1);
+  static const Color _darkBg = Color(0xFF0F171E);
+  static const Color _cardBg = Color(0xFF1A242F);
+
   bool _showEpisodes = false;
   bool _loadingSeasons = false;
   bool _loadingEpisodes = false;
@@ -142,6 +146,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Top Backdrop
               Stack(
                 children: [
                   ClipRRect(
@@ -157,7 +162,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                           )
                         : Container(
                             height: 210,
-                            color: Colors.grey.shade900,
+                            color: _cardBg,
                           ),
                   ),
                   Container(
@@ -169,7 +174,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Color(0xFF141414)],
+                        colors: [Colors.transparent, _darkBg],
                       ),
                     ),
                   ),
@@ -179,6 +184,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                     child: CircleAvatar(
                       backgroundColor: Colors.black54,
                       child: IconButton(
+                        focusColor: _primeBlue.withOpacity(0.5),
                         icon: const Icon(Icons.close, color: Colors.white),
                         onPressed: () => Navigator.pop(context),
                       ),
@@ -186,6 +192,8 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                   ),
                 ],
               ),
+
+              // Title, Meta & Watch Now
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
@@ -208,7 +216,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFE50914),
+                            color: _primeBlue,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -236,15 +244,34 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                       ],
                     ),
                     const SizedBox(height: 14),
+
+                    // Watch Now Button (TV Remote Autofocus)
                     SizedBox(
                       width: double.infinity,
-                      height: 46,
+                      height: 48,
                       child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFE50914),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                        autofocus: true,
+                        style: ButtonStyle(
+                          backgroundColor:
+                              WidgetStateProperty.all(_primeBlue),
+                          foregroundColor:
+                              WidgetStateProperty.all(Colors.white),
+                          overlayColor: WidgetStateProperty.all(
+                            Colors.white.withOpacity(0.2),
+                          ),
+                          side: WidgetStateProperty.resolveWith((states) {
+                            if (states.contains(WidgetState.focused)) {
+                              return const BorderSide(
+                                color: Colors.white,
+                                width: 2.5,
+                              );
+                            }
+                            return BorderSide.none;
+                          }),
+                          shape: WidgetStateProperty.all(
+                            RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                         ),
                         onPressed: _onWatchNowPressed,
@@ -262,6 +289,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                         ),
                       ),
                     ),
+
                     const SizedBox(height: 12),
                     Text(
                       _overview,
@@ -273,6 +301,8 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                         height: 1.4,
                       ),
                     ),
+
+                    // Web Series Seasons & Episodes
                     if (_showEpisodes && _isTv) ...[
                       const SizedBox(height: 18),
                       const Divider(color: Colors.white24),
@@ -282,7 +312,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                           child: Padding(
                             padding: EdgeInsets.all(16),
                             child: CircularProgressIndicator(
-                              color: Color(0xFFE50914),
+                              color: _primeBlue,
                             ),
                           ),
                         )
@@ -301,7 +331,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                             if (_seasons.isNotEmpty)
                               DropdownButton<int>(
                                 value: _selectedSeason,
-                                dropdownColor: const Color(0xFF222222),
+                                dropdownColor: _cardBg,
                                 style: const TextStyle(color: Colors.white),
                                 underline: const SizedBox(),
                                 items: _seasons.map((s) {
@@ -325,7 +355,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                             child: Padding(
                               padding: EdgeInsets.all(20),
                               child: CircularProgressIndicator(
-                                color: Color(0xFFE50914),
+                                color: _primeBlue,
                               ),
                             ),
                           )
@@ -349,6 +379,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
 
                               return InkWell(
                                 borderRadius: BorderRadius.circular(10),
+                                focusColor: _primeBlue.withOpacity(0.35),
                                 onTap: () => _openPlayer(
                                   season: _selectedSeason,
                                   episode: epNum,
@@ -356,7 +387,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                                 child: Container(
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF1E1E1E),
+                                    color: _cardBg,
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Row(
@@ -411,7 +442,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                                       ),
                                       const Icon(
                                         Icons.play_circle_fill,
-                                        color: Color(0xFFE50914),
+                                        color: _primeBlue,
                                         size: 30,
                                       ),
                                     ],
