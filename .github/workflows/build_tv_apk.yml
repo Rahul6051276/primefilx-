@@ -28,9 +28,13 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Generate Android v2 Files
+      - name: Regenerate Fresh Android Project
         working-directory: ./mobile_version
-        run: flutter create . --platforms=android
+        run: |
+          cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml
+          rm -rf android
+          flutter create . --platforms=android
+          cp /tmp/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
       - name: Install Dependencies
         working-directory: ./mobile_version
