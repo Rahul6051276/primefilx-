@@ -9,33 +9,57 @@ import org.json.JSONObject
 
 object Media3Bridge {
     private const val CHANNEL_NAME = "com.primeflix/media3"
+    var activePlayer: Media3PlayerActivity? = null
 
     fun register(activity: Activity, flutterEngine: FlutterEngine) {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_NAME)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "playMedia" -> {
-                        val url = (call.argument<String>("url"))?.trim() ?: ""
-                        val title = (call.argument<String>("title"))?.trim().orEmpty().ifEmpty { "Primeflix" }
+                        val url = call.argument<String>("url")?.trim().orEmpty()
+                        val title = call.argument<String>("title")?.trim().orEmpty().ifEmpty { "PrimeFlix" }
+
+                        val headersJson = JSONObject()
                         val rawHeaders = call.argument>("headers")
-                        val headers = HashMap<String, String>()
                         rawHeaders?.forEach { (k, v) ->
                             if (k != null && v != null) {
-                                headers[k.toString()] = v.toString()
+                                headersJson.put(k.toString(), v.toString())
                             }
                         }
 
-                        val rawServers = call.argument<List<*>>("servers")
                         val serversJson = JSONArray()
+                        val rawServers = call.argument<List<*>>("servers")
                         rawServers?.forEach { entry ->
                             if (entry is Map<*, *>) {
-                                val obj = JSONObject()
                                 val sUrl = entry["url"]?.toString()?.trim().orEmpty()
                                 if (sUrl.isNotEmpty()) {
-                                    obj.put("title", entry["title"]?.toString() ?: title)
-                                    obj.put("server", entry["server"]?.toString() ?: "Server")
+                                    val entryHeaders = JSONObject()
+                                    val hMap = entry["headers"]
+                                    if (hMap is Map<*, *>) {
+                                        hMap.forEach { (hk, hv) ->
+                                            if (hk != null && hv != null) {
+                                                entryHeaders.put(hk.toString(), hv.toString())
+                                            }
+                                        }
+                                    } else if (headersJson.length() > 0) {
+                                        val keys = headersJson.keys()
+                                        while (keys.hasNext()) {
+                                            val hk = keys.next()
+                                            entryHeaders.put(hk, headersJson.optString(hk, ""))
+                                        }
+                                    }
+
+                                    val obj = JSONObject()
                                     obj.put("url", sUrl)
-                                    obj.put("isHindi", entry["isHindi"] == true)
+                                    obj.put("title", entry["title"]?.toString() ?: title)
+                                    obj.put(
+                                        "providerName",
+                                        entry["providerName"]?.toString()
+                                            ?: entry["server"]?.toString()
+                                            ?: "Server"
+                                    )
+                                    obj.put("quality", entry["quality"]?.toString() ?: "HD")
+                                    obj.put("headers", entryHeaders)
                                     serversJson.put(obj)
                                 }
                             }
@@ -54,12 +78,29 @@ object Media3Bridge {
                             return@setMethodCallHandler
                         }
 
+                        if (serversJson.length() == 0) {
+                            val singleObj = JSONObject()
+                            singleObj.put("url", resolvedUrl)
+                            singleObj.put("title", title)
+                            singleObj.put("providerName", "Server")
+                            singleObj.put("quality", "HD")
+                            singleObj.put("headers", headersJson)
+                            serversJson.put(singleObj)
+                        }
+
                         try {
+                            val current = activePlayer
+                            if (current != null && !current.isFinishing && !current.isDestroyed) {
+                                current.updateServersFromBridge(serversJson.toString())
+                                result.success(true)
+                                return@setMethodCallHandler
+                            }
+
                             val intent = Intent(activity, Media3PlayerActivity::class.java).apply {
-                                putExtra(Media3PlayerActivity.EXTRA_URL, resolvedUrl)
-                                putExtra(Media3PlayerActivity.EXTRA_TITLE, title)
-                                putExtra(Media3PlayerActivity.EXTRA_HEADERS, headers)
-                                putExtra(Media3PlayerActivity.EXTRA_SERVERS_JSON, serversJson.toString())
+                                putExtra("url", resolvedUrl)
+                                putExtra("title", title)
+                                putExtra("servers_json", serversJson.toString())
+                                putExtra("start_index", 0)
                             }
                             activity.startActivity(intent)
                             result.success(true)
@@ -67,6 +108,7 @@ object Media3Bridge {
                             result.error("LAUNCH_FAILED", e.message, null)
                         }
                     }
+
                     else -> result.notImplemented()
                 }
             }
