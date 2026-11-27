@@ -4,6 +4,7 @@ import '../services/app_settings_service.dart';
 import '../services/stream_service.dart';
 import '../services/tmdb_service.dart';
 import '../widgets/mobile_stream_modal.dart';
+import 'catalog_collection_screen.dart';
 import 'my_list_screen.dart';
 import 'settings_screen.dart';
 
@@ -362,7 +363,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                       backgroundColor: _primeBlue,
                       foregroundColor: Colors.white,
                     ),
-                    onPressed: () => setState(() => _navIndex = 2),
+                    onPressed: () => setState(() => _navIndex = 4),
                     icon: const Icon(Icons.settings),
                     label: const Text('Open Settings'),
                   ),
@@ -386,6 +387,16 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   Widget build(BuildContext context) {
     final pages = [
       _buildHomeBody(),
+      CatalogCollectionScreen(
+        key: const ValueKey('all_movies_collection'),
+        isTv: false,
+        onItemTap: (item) => MobileStreamModal.show(context, item),
+      ),
+      CatalogCollectionScreen(
+        key: const ValueKey('all_series_collection'),
+        isTv: true,
+        onItemTap: (item) => MobileStreamModal.show(context, item),
+      ),
       MyListScreen(key: _myListKey),
       SettingsScreen(onSettingsUpdated: _initData),
     ];
@@ -433,18 +444,23 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       body: pages[_navIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _navIndex,
+        type: BottomNavigationBarType.fixed,
         backgroundColor: _cardBg,
         selectedItemColor: _primeBlue,
         unselectedItemColor: Colors.white54,
+        selectedFontSize: 11.5,
+        unselectedFontSize: 11,
         onTap: (idx) {
           setState(() => _navIndex = idx);
-          if (idx == 1) {
+          if (idx == 3) {
             final state = _myListKey.currentState as dynamic;
             state?.loadMyList();
           }
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.movie_rounded), label: 'Movies'),
+          BottomNavigationBarItem(icon: Icon(Icons.tv_rounded), label: 'Web Series'),
           BottomNavigationBarItem(icon: Icon(Icons.bookmarks_rounded), label: 'My List'),
           BottomNavigationBarItem(icon: Icon(Icons.settings_rounded), label: 'Settings'),
         ],

@@ -6,6 +6,7 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
@@ -126,6 +127,9 @@ class CinemaPlayerActivity : Activity() {
     private var currentUserAgent = "PrimeFlix/1.0"
     private var currentMovieTitle = "PrimeFlix"
     private var currentPreset = PicturePreset.JUST_PLAYER
+
+    private val primeBlueHex = "#00A8E1"
+    private val primeBlueLightHex = "#38BDF8"
 
     private val handler = Handler(Looper.getMainLooper())
     private var hudVisible = true
@@ -432,7 +436,7 @@ class CinemaPlayerActivity : Activity() {
             "🔊 100%"
         }
         boostBtn.setTextColor(
-            if (currentBoostPercent > 100) Color.parseColor("#38BDF8") else Color.WHITE
+            if (currentBoostPercent > 100) Color.parseColor(primeBlueLightHex) else Color.WHITE
         )
     }
 
@@ -973,6 +977,7 @@ class CinemaPlayerActivity : Activity() {
         root.addView(gestureLayer)
 
         loadingSpinner = ProgressBar(this).apply {
+            indeterminateTintList = ColorStateList.valueOf(Color.parseColor(primeBlueHex))
             layoutParams = FrameLayout.LayoutParams(dp(52), dp(52), Gravity.CENTER)
             visibility = View.GONE
         }
@@ -986,7 +991,7 @@ class CinemaPlayerActivity : Activity() {
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#F00C111B"))
                 cornerRadius = dp(16).toFloat()
-                setStroke(dp(1), Color.parseColor("#99E50914"))
+                setStroke(dp(1), Color.parseColor("#9900A8E1"))
             }
             visibility = View.GONE
             layoutParams = FrameLayout.LayoutParams(
@@ -996,6 +1001,7 @@ class CinemaPlayerActivity : Activity() {
             )
         }
         val cardSpinner = ProgressBar(this).apply {
+            indeterminateTintList = ColorStateList.valueOf(Color.parseColor(primeBlueHex))
             layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
         }
         connectingText = TextView(this).apply {
@@ -1018,7 +1024,7 @@ class CinemaPlayerActivity : Activity() {
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#CC0C111B"))
                 cornerRadius = dp(24).toFloat()
-                setStroke(dp(1), Color.parseColor("#66E50914"))
+                setStroke(dp(1), Color.parseColor("#8800A8E1"))
             }
             visibility = View.GONE
             layoutParams = FrameLayout.LayoutParams(
@@ -1065,12 +1071,12 @@ class CinemaPlayerActivity : Activity() {
         }
         infoBadgeView = TextView(this).apply {
             text = "HW"
-            setTextColor(Color.parseColor("#38BDF8"))
+            setTextColor(Color.parseColor(primeBlueLightHex))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             typeface = Typeface.DEFAULT_BOLD
             setPadding(dp(8), dp(4), dp(8), dp(4))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#331E88E5"))
+                setColor(Color.parseColor("#3300A8E1"))
                 cornerRadius = dp(6).toFloat()
             }
             visibility = View.GONE
@@ -1149,6 +1155,10 @@ class CinemaPlayerActivity : Activity() {
             keyProgressIncrement = 15
             isFocusable = !isTvDevice
             isFocusableInTouchMode = false
+            progressTintList = ColorStateList.valueOf(Color.parseColor(primeBlueHex))
+            thumbTintList = ColorStateList.valueOf(Color.parseColor(primeBlueHex))
+            secondaryProgressTintList = ColorStateList.valueOf(Color.parseColor("#6600A8E1"))
+            progressBackgroundTintList = ColorStateList.valueOf(Color.parseColor("#4DFFFFFF"))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                 leftMargin = dp(14)
                 rightMargin = dp(14)
@@ -1365,7 +1375,7 @@ class CinemaPlayerActivity : Activity() {
         }
         val headerSub = TextView(this).apply {
             text = "IPTV VOD & Hindi servers listed on top"
-            setTextColor(Color.parseColor("#FACC15"))
+            setTextColor(Color.parseColor(primeBlueLightHex))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
             setPadding(0, dp(2), 0, 0)
         }
@@ -1442,15 +1452,15 @@ class CinemaPlayerActivity : Activity() {
 
     private fun createSourceCardBackground(isSelected: Boolean, isHindi: Boolean): StateListDrawable {
         val focused = GradientDrawable().apply {
-            setColor(Color.parseColor("#1E3A8A"))
+            setColor(Color.parseColor("#0C4A6E"))
             cornerRadius = dp(10).toFloat()
             setStroke(dp(3), Color.WHITE)
         }
         val normal = GradientDrawable().apply {
             setColor(
                 when {
-                    isSelected -> Color.parseColor("#162A4C")
-                    isHindi -> Color.parseColor("#192234")
+                    isSelected -> Color.parseColor("#0F2942")
+                    isHindi -> Color.parseColor("#132238")
                     else -> Color.parseColor("#131722")
                 }
             )
@@ -1458,8 +1468,8 @@ class CinemaPlayerActivity : Activity() {
             setStroke(
                 dp(if (isSelected || isHindi) 2 else 1),
                 when {
-                    isSelected -> Color.parseColor("#22C55E")
-                    isHindi -> Color.parseColor("#88FACC15")
+                    isSelected -> Color.parseColor(primeBlueHex)
+                    isHindi -> Color.parseColor("#8800A8E1")
                     else -> Color.parseColor("#2A3142")
                 }
             )
@@ -1488,7 +1498,7 @@ class CinemaPlayerActivity : Activity() {
         if (isResolvingAllSources) {
             val scanningBanner = TextView(this).apply {
                 text = "⏳ Scanning IPTV & Cloud servers (${streamSources.size} loaded)..."
-                setTextColor(Color.parseColor("#38BDF8"))
+                setTextColor(Color.parseColor(primeBlueLightHex))
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
                 typeface = Typeface.DEFAULT_BOLD
                 setPadding(dp(4), 0, dp(4), dp(10))
@@ -1541,7 +1551,7 @@ class CinemaPlayerActivity : Activity() {
 
             val serverBadge = makeTagBadge(
                 text = src.server,
-                bgHex = if (iptvFlag) "#16A34A" else "#E50914",
+                bgHex = if (iptvFlag) "#0284C7" else primeBlueHex,
                 fgHex = "#FFFFFF"
             )
             badgesRow.addView(serverBadge)
@@ -1551,8 +1561,8 @@ class CinemaPlayerActivity : Activity() {
                 badgesRow.addView(
                     makeTagBadge(
                         text = if (src.isMultiAudio) "★ HINDI / MULTI" else "★ HINDI",
-                        bgHex = "#FACC15",
-                        fgHex = "#111111"
+                        bgHex = primeBlueLightHex,
+                        fgHex = "#06101C"
                     )
                 )
             }
@@ -1560,7 +1570,7 @@ class CinemaPlayerActivity : Activity() {
             val qTag = extractQualityTag(src.title)
             if (qTag.isNotEmpty()) {
                 badgesRow.addView(spacer(dp(6)))
-                badgesRow.addView(makeTagBadge(qTag, "#1E3A8A", "#93C5FD"))
+                badgesRow.addView(makeTagBadge(qTag, "#0C4A6E", "#BAE6FD"))
             }
 
             val titleTxt = TextView(this).apply {
@@ -1586,7 +1596,7 @@ class CinemaPlayerActivity : Activity() {
                         else -> "ORIGINAL HD"
                     }
                 }"
-                setTextColor(if (src.isHindi || iptvFlag) Color.parseColor("#FDE047") else Color.parseColor("#8E96A4"))
+                setTextColor(if (src.isHindi || iptvFlag) Color.parseColor(primeBlueLightHex) else Color.parseColor("#8E96A4"))
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
@@ -1599,14 +1609,14 @@ class CinemaPlayerActivity : Activity() {
             val rightIcon = TextView(this).apply {
                 text = if (isSelected) "✓" else "▶"
                 gravity = Gravity.CENTER
-                setTextColor(if (isSelected) Color.BLACK else Color.WHITE)
+                setTextColor(Color.WHITE)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                 typeface = Typeface.DEFAULT_BOLD
                 layoutParams = LinearLayout.LayoutParams(dp(26), dp(26))
                 if (isSelected) {
                     background = GradientDrawable().apply {
                         shape = GradientDrawable.OVAL
-                        setColor(Color.parseColor("#22C55E"))
+                        setColor(Color.parseColor(primeBlueHex))
                     }
                 }
             }
@@ -1672,14 +1682,14 @@ class CinemaPlayerActivity : Activity() {
 
     private fun createSourcesPill(): StateListDrawable {
         val focused = GradientDrawable().apply {
-            setColor(Color.parseColor("#0F172A"))
+            setColor(Color.parseColor("#0C4A6E"))
             cornerRadius = dp(18).toFloat()
-            setStroke(dp(3), Color.parseColor("#FACC15"))
+            setStroke(dp(3), Color.WHITE)
         }
         val normal = GradientDrawable().apply {
-            setColor(Color.parseColor("#E50914"))
+            setColor(Color.parseColor(primeBlueHex))
             cornerRadius = dp(18).toFloat()
-            setStroke(dp(1), Color.parseColor("#66FFFFFF"))
+            setStroke(dp(1), Color.parseColor("#88FFFFFF"))
         }
         return StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), focused)
@@ -2355,14 +2365,14 @@ class CinemaPlayerActivity : Activity() {
 
     private fun createFocusablePill(): StateListDrawable {
         val focused = GradientDrawable().apply {
-            setColor(Color.parseColor("#E50914"))
+            setColor(Color.parseColor(primeBlueHex))
             cornerRadius = dp(18).toFloat()
             setStroke(dp(2), Color.WHITE)
         }
         val normal = GradientDrawable().apply {
             setColor(Color.parseColor("#880C111B"))
             cornerRadius = dp(18).toFloat()
-            setStroke(dp(1), Color.parseColor("#33FFFFFF"))
+            setStroke(dp(1), Color.parseColor("#4400A8E1"))
         }
         return StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), focused)
