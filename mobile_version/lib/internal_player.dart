@@ -53,7 +53,7 @@ class _InternalPlayerState extends State<InternalPlayer> {
 
   Future<void> _launchCinemaPlayer({
     String url = '',
-    List> sources = const [],
+    List sources = const [],
   }) async {
     if (_launchedNative || !mounted) return;
     _launchedNative = true;
@@ -63,7 +63,7 @@ class _InternalPlayerState extends State<InternalPlayer> {
     final seekSeconds = await AppSettingsService.getSeekSeconds();
 
     try {
-      await _playerChannel.invokeMethod<bool>('playVideo', {
+      await _playerChannel.invokeMethod('playVideo', {
         'url': url,
         'title': _displayTitle,
         'tmdbId': widget.tmdbId > 0 ? widget.tmdbId.toString() : '',
@@ -118,9 +118,13 @@ class _InternalPlayerState extends State<InternalPlayer> {
           _servers.add(link);
         }
         if (!_launchedNative && _servers.isNotEmpty) {
+          final list = [];
+          for (final s in _servers) {
+            list.add(s.toPlayerMap());
+          }
           await _launchCinemaPlayer(
             url: _servers.first.url,
-            sources: _servers.map((e) => e.toPlayerMap()).toList(),
+            sources: list,
           );
         }
       },
@@ -128,9 +132,13 @@ class _InternalPlayerState extends State<InternalPlayer> {
         if (!mounted) return;
         setState(() => _isSearching = false);
         if (!_launchedNative && _servers.isNotEmpty) {
+          final list = [];
+          for (final s in _servers) {
+            list.add(s.toPlayerMap());
+          }
           await _launchCinemaPlayer(
             url: _servers.first.url,
-            sources: _servers.map((e) => e.toPlayerMap()).toList(),
+            sources: list,
           );
         }
       },

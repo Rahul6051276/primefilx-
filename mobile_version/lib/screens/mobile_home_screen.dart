@@ -24,14 +24,14 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   bool _hasTmdbKey = false;
   int _connectedProviders = 0;
 
-  List> _bollywoodMovies = [];
-  List> _southMovies = [];
-  List> _hollywoodMovies = [];
-  List> _hindiWebSeries = [];
-  List> _netflixWebSeries = [];
-  List> _amazonWebSeries = [];
+  List _bollywoodMovies = [];
+  List _southMovies = [];
+  List _hollywoodMovies = [];
+  List _hindiWebSeries = [];
+  List _netflixWebSeries = [];
+  List _amazonWebSeries = [];
 
-  final GlobalKey<State<MyListScreen>> _myListKey = GlobalKey();
+  final GlobalKey _myListKey = GlobalKey();
 
   @override
   void initState() {
@@ -56,12 +56,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     if (!mounted) return;
     setState(() {
       _hasTmdbKey = tmdbKey.isNotEmpty;
-      _bollywoodMovies = results[0] as List>;
-      _southMovies = results[1] as List>;
-      _hollywoodMovies = results[2] as List>;
-      _hindiWebSeries = results[3] as List>;
-      _netflixWebSeries = results[4] as List>;
-      _amazonWebSeries = results[5] as List>;
+      _bollywoodMovies = results[0] as List;
+      _southMovies = results[1] as List;
+      _hollywoodMovies = results[2] as List;
+      _hindiWebSeries = results[3] as List;
+      _netflixWebSeries = results[4] as List;
+      _amazonWebSeries = results[5] as List;
       _connectedProviders = (results[6] as List).length;
       _isLoading = false;
     });
@@ -69,7 +69,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
   void _openSearchSheet() {
     final searchController = TextEditingController();
-    List> results = [];
+    List results = [];
     bool searching = false;
 
     showModalBottomSheet(
@@ -259,7 +259,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  Widget _buildSection(String title, List> items) {
+  Widget _buildSection(String title, List items) {
     if (items.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -454,7 +454,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 }
 
 class _MobilePosterCard extends StatelessWidget {
-  final Map<String, dynamic> item;
+  final dynamic item;
   final VoidCallback onTap;
 
   const _MobilePosterCard({

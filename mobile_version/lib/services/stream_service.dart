@@ -10,7 +10,7 @@ class StreamLink {
   final String url;
   final String quality;
   final bool isHindi;
-  final Map<String, String> headers;
+  final Map headers;
 
   StreamLink({
     required this.providerName,
@@ -21,7 +21,7 @@ class StreamLink {
     this.headers = const {},
   });
 
-  Map<String, dynamic> toPlayerMap() {
+  Map toPlayerMap() {
     return {
       'server': providerName,
       'title': title,
@@ -33,9 +33,9 @@ class StreamLink {
 }
 
 class StreamService {
-  static List> _cachedProviders = [];
-  static final Map<String, List<dynamic>> _xtreamVodCache = {};
-  static final Map<String, List<dynamic>> _xtreamSeriesCache = {};
+  static List _cachedProviders = [];
+  static final Map _xtreamVodCache = {};
+  static final Map _xtreamSeriesCache = {};
 
   static Future<int> saveAndConnectGistUrl(String rawUrl) async {
     await AppSettingsService.setGistUrl(rawUrl);
@@ -46,7 +46,7 @@ class StreamService {
     return providers.length;
   }
 
-  static Future<List>> loadProviders({
+  static Future<List> loadProviders({
     bool forceRefresh = false,
   }) async {
     if (!forceRefresh && _cachedProviders.isNotEmpty) {
@@ -62,19 +62,20 @@ class StreamService {
       final res = await http.get(uri).timeout(const Duration(seconds: 12));
       if (res.statusCode == 200) {
         final decoded = json.decode(res.body);
-        final List<dynamic> rawList;
+        List rawList = [];
         if (decoded is List) {
           rawList = decoded;
         } else if (decoded is Map) {
           rawList = (decoded['active_providers'] ?? decoded['providers'] ?? []) as List;
-        } else {
-          rawList = const [];
         }
 
-        _cachedProviders = rawList
-            .whereType()
-            .map>((e) => Map<String, dynamic>.from(e))
-            .toList();
+        final parsed = [];
+        for (final e in rawList) {
+          if (e is Map) {
+            parsed.add(Map<String, dynamic>.from(e));
+          }
+        }
+        _cachedProviders = parsed;
         return _cachedProviders;
       }
     } catch (_) {}
@@ -99,9 +100,10 @@ class StreamService {
         }
 
         final imdbId = await TmdbService.getImdbId(tmdbId, isTv);
-        final List<Future<void>> tasks = [];
+        final List<Future> tasks = [];
 
-        for (final provider in providers) {
+        for (final p in providers) {
+          final provider = Map<String, dynamic>.from(p as Map);
           final type = (provider['type'] ?? '').toString().toLowerCase();
           if (type == 'stremio' && imdbId != null && imdbId.isNotEmpty) {
             tasks.add(_fetchFromStremio(
@@ -141,7 +143,7 @@ class StreamService {
   }
 
   static Future<void> _fetchFromStremio({
-    required Map<String, dynamic> provider,
+    required Map provider,
     required String imdbId,
     required bool isTv,
     int? season,
@@ -175,7 +177,7 @@ class StreamService {
                   .toString()
                   .replaceAll('\n', ' • ');
 
-          final Map<String, String> headers = {};
+          final Map headers = {};
           final proxyHeaders = s['behaviorHints']?['proxyHeaders']?['request'];
           if (proxyHeaders is Map) {
             proxyHeaders.forEach((k, v) {
@@ -197,7 +199,7 @@ class StreamService {
   }
 
   static Future<void> _fetchFromXtream({
-    required Map<String, dynamic> provider,
+    required Map provider,
     required String title,
     required String tmdbId,
     required bool isTv,
@@ -218,7 +220,7 @@ class StreamService {
       final target = _normalize(title);
 
       if (!isTv) {
-        List<dynamic> vodList;
+        List vodList;
         if (_xtreamVodCache.containsKey(cacheKey)) {
           vodList = _xtreamVodCache[cacheKey]!;
         } else {
@@ -228,7 +230,7 @@ class StreamService {
           final res = await http.get(uri).timeout(const Duration(seconds: 20));
           if (res.statusCode != 200) return;
           final decoded = json.decode(res.body);
-          vodList = decoded is List ? decoded : const [];
+          vodList = decoded is List ? decoded : [];
           _xtreamVodCache[cacheKey] = vodList;
         }
 
@@ -256,7 +258,7 @@ class StreamService {
           }
         }
       } else {
-        List<dynamic> seriesList;
+        List seriesList;
         if (_xtreamSeriesCache.containsKey(cacheKey)) {
           seriesList = _xtreamSeriesCache[cacheKey]!;
         } else {
@@ -266,7 +268,7 @@ class StreamService {
           final res = await http.get(uri).timeout(const Duration(seconds: 20));
           if (res.statusCode != 200) return;
           final decoded = json.decode(res.body);
-          seriesList = decoded is List ? decoded : const [];
+          seriesList = decoded is List ? decoded : [];
           _xtreamSeriesCache[cacheKey] = seriesList;
         }
 
@@ -290,7 +292,7 @@ class StreamService {
           final episodesMap = infoData is Map ? infoData['episodes'] : null;
           if (episodesMap is Map) {
             final seasonKey = (season ?? 1).toString();
-            final epList = episodesMap[seasonKey] as List? ?? [];
+            final epList = (episodesMap[seasonKey] as List? ?? []);
             for (final ep in epList) {
               if (ep is! Map) continue;
               final epNum = int.tryParse(ep['episode_num'].toString()) ?? -1;

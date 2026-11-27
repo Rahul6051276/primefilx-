@@ -61,7 +61,6 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import com.primeflix.app.R
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.InputStreamReader

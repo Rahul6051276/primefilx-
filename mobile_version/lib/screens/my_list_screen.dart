@@ -17,7 +17,7 @@ class _MyListScreenState extends State<MyListScreen> {
   static const Color _darkBg = Color(0xFF0B1118);
   static const Color _cardBg = Color(0xFF15202B);
 
-  List> _myList = [];
+  List _myList = [];
   bool _isLoading = true;
 
   @override
@@ -30,13 +30,18 @@ class _MyListScreenState extends State<MyListScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString('my_list_mobile') ?? '[]';
-      final List decoded = jsonDecode(raw);
+      final decoded = jsonDecode(raw);
+      final parsed = [];
+      if (decoded is List) {
+        for (final e in decoded) {
+          if (e is Map) {
+            parsed.add(Map<String, dynamic>.from(e));
+          }
+        }
+      }
       if (!mounted) return;
       setState(() {
-        _myList = decoded
-            .whereType()
-            .map>((e) => Map<String, dynamic>.from(e))
-            .toList();
+        _myList = parsed;
         _isLoading = false;
       });
     } catch (_) {
@@ -44,7 +49,7 @@ class _MyListScreenState extends State<MyListScreen> {
     }
   }
 
-  Future<void> _removeFromList(Map<String, dynamic> item) async {
+  Future<void> _removeFromList(Map item) async {
     try {
       final id = (item['tmdb_id'] ?? item['id'])?.toString() ?? '';
       _myList.removeWhere(

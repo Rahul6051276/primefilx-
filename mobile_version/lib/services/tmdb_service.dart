@@ -7,16 +7,18 @@ class TmdbService {
   static const String imageBaseUrl = 'https://image.tmdb.org/t/p/w500';
   static const String backdropBaseUrl = 'https://image.tmdb.org/t/p/w1280';
 
-  static String getPosterUrl(String? path) {
-    if (path == null || path.isEmpty) return '';
-    if (path.startsWith('http')) return path;
-    return '$imageBaseUrl$path';
+  static String getPosterUrl(dynamic path) {
+    final p = (path ?? '').toString().trim();
+    if (p.isEmpty) return '';
+    if (p.startsWith('http')) return p;
+    return '$imageBaseUrl$p';
   }
 
-  static String getBackdropUrl(String? path) {
-    if (path == null || path.isEmpty) return '';
-    if (path.startsWith('http')) return path;
-    return '$backdropBaseUrl$path';
+  static String getBackdropUrl(dynamic path) {
+    final p = (path ?? '').toString().trim();
+    if (p.isEmpty) return '';
+    if (p.startsWith('http')) return p;
+    return '$backdropBaseUrl$p';
   }
 
   static String _todayDate() {
@@ -35,7 +37,7 @@ class TmdbService {
     return '$y-$m-$d';
   }
 
-  static Future<List>> _fetchList(
+  static Future<List> _fetchList(
     String endpoint, {
     String? forcedMediaType,
   }) async {
@@ -49,19 +51,21 @@ class TmdbService {
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
         final results = (data['results'] as List? ?? []);
-        return results.map>((item) {
+        final out = [];
+        for (final item in results) {
           final map = Map<String, dynamic>.from(item as Map);
           if (forcedMediaType != null) {
             map['media_type'] = forcedMediaType;
           }
-          return map;
-        }).toList();
+          out.add(map);
+        }
+        return out;
       }
     } catch (_) {}
     return [];
   }
 
-  static Future<List>> getLatestBollywoodMovies() {
+  static Future<List> getLatestBollywoodMovies() {
     final today = _todayDate();
     final recent = _monthsAgoDate(12);
     return _fetchList(
@@ -70,7 +74,7 @@ class TmdbService {
     );
   }
 
-  static Future<List>> getLatestSouthMovies() {
+  static Future<List> getLatestSouthMovies() {
     final today = _todayDate();
     final recent = _monthsAgoDate(12);
     return _fetchList(
@@ -79,7 +83,7 @@ class TmdbService {
     );
   }
 
-  static Future<List>> getLatestHollywoodMovies() {
+  static Future<List> getLatestHollywoodMovies() {
     final today = _todayDate();
     final recent = _monthsAgoDate(8);
     return _fetchList(
@@ -88,7 +92,7 @@ class TmdbService {
     );
   }
 
-  static Future<List>> getLatestHindiWebSeries() {
+  static Future<List> getLatestHindiWebSeries() {
     final today = _todayDate();
     return _fetchList(
       '/discover/tv?with_original_language=hi&without_genres=10766,10767,10763,10764&with_watch_providers=8|119|122|237|232|220&watch_region=IN&sort_by=first_air_date.desc&first_air_date.lte=$today&vote_count.gte=3',
@@ -96,7 +100,7 @@ class TmdbService {
     );
   }
 
-  static Future<List>> getLatestNetflixWebSeries() {
+  static Future<List> getLatestNetflixWebSeries() {
     final today = _todayDate();
     return _fetchList(
       '/discover/tv?with_networks=213&without_genres=10766,10767,10763,10764&sort_by=popularity.desc&first_air_date.lte=$today',
@@ -104,7 +108,7 @@ class TmdbService {
     );
   }
 
-  static Future<List>> getLatestAmazonWebSeries() {
+  static Future<List> getLatestAmazonWebSeries() {
     final today = _todayDate();
     return _fetchList(
       '/discover/tv?with_networks=1024&without_genres=10766,10767,10763,10764&sort_by=popularity.desc&first_air_date.lte=$today',
@@ -112,7 +116,7 @@ class TmdbService {
     );
   }
 
-  static Future<List>> searchMulti(String query) async {
+  static Future<List> searchMulti(String query) async {
     if (query.trim().isEmpty) return [];
     final encoded = Uri.encodeQueryComponent(query.trim());
     final list = await _fetchList('/search/multi?query=$encoded');
@@ -136,7 +140,7 @@ class TmdbService {
     return null;
   }
 
-  static Future<List>> getTvSeasons(int tvId) async {
+  static Future<List> getTvSeasons(int tvId) async {
     final apiKey = await AppSettingsService.getTmdbApiKey();
     if (apiKey.isEmpty) return [];
     try {
@@ -145,19 +149,20 @@ class TmdbService {
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
         final seasons = (data['seasons'] as List? ?? []);
-        return seasons
-            .map>((s) => Map<String, dynamic>.from(s as Map))
-            .where((s) => ((s['season_number'] as num?)?.toInt() ?? 0) > 0)
-            .toList();
+        final out = [];
+        for (final s in seasons) {
+          final map = Map<String, dynamic>.from(s as Map);
+          if (((map['season_number'] as num?)?.toInt() ?? 0) > 0) {
+            out.add(map);
+          }
+        }
+        return out;
       }
     } catch (_) {}
     return [];
   }
 
-  static Future<List>> getSeasonEpisodes(
-    int tvId,
-    int seasonNumber,
-  ) async {
+  static Future<List> getSeasonEpisodes(int tvId, int seasonNumber) async {
     final apiKey = await AppSettingsService.getTmdbApiKey();
     if (apiKey.isEmpty) return [];
     try {
@@ -166,9 +171,11 @@ class TmdbService {
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
         final episodes = (data['episodes'] as List? ?? []);
-        return episodes
-            .map>((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
+        final out = [];
+        for (final e in episodes) {
+          out.add(Map<String, dynamic>.from(e as Map));
+        }
+        return out;
       }
     } catch (_) {}
     return [];
