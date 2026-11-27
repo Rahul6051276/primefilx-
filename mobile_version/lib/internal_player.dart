@@ -31,7 +31,7 @@ class _InternalPlayerState extends State<InternalPlayer> {
   static const Color _primeBlue = Color(0xFF00A8E1);
   static const MethodChannel _playerChannel = MethodChannel('com.primeflix/player');
 
-  final List<StreamLink> _servers = [];
+  final List _servers = [];
   StreamSubscription<StreamLink>? _streamSub;
   bool _isSearching = true;
   bool _launchedNative = false;
@@ -153,6 +153,10 @@ class _InternalPlayerState extends State<InternalPlayer> {
   @override
   void dispose() {
     _streamSub?.cancel();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }

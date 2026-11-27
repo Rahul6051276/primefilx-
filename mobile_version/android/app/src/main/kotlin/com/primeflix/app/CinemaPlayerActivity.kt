@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.UiModeManager
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
@@ -182,6 +183,9 @@ class CinemaPlayerActivity : Activity() {
         handler.removeCallbacksAndMessages(null)
         releaseLoudnessEnhancer()
         try {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } catch (_: Throwable) {}
+        try {
             playerView.player = null
             player?.stop()
             player?.release()
@@ -205,6 +209,10 @@ class CinemaPlayerActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        try {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } catch (_: Throwable) {}
 
         isTvDevice = detectAndroidTv()
 
