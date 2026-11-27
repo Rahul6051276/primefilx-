@@ -31,7 +31,7 @@ jobs:
       - name: Ensure Android Scaffolding Exists
         working-directory: ./mobile_version
         run: |
-          if [ ! -f "android/gradlew" ] || [ ! -f "android/settings.gradle" ] && [ ! -f "android/settings.gradle.kts" ]; then
+          if [ ! -f "android/gradlew" ] || ( [ ! -f "android/settings.gradle" ] && [ ! -f "android/settings.gradle.kts" ] ); then
             mkdir -p /tmp/primeflix_backup
             cp -r android/app/src/main/kotlin /tmp/primeflix_backup/ 2>/dev/null || true
             cp -r android/app/src/main/res /tmp/primeflix_backup/ 2>/dev/null || true
@@ -50,7 +50,6 @@ jobs:
           python3 - << 'EOF'
           from pathlib import Path
 
-          # 1. AndroidManifest.xml mein usesCleartextTraffic ensure karein
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           if manifest.exists():
               txt = manifest.read_text(encoding="utf-8")
@@ -58,8 +57,7 @@ jobs:
                   txt = txt.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
               manifest.write_text(txt, encoding="utf-8")
 
-          # 2. app/build.gradle ya app/build.gradle.kts mein Media3 dependencies jodein
-          media3_deps_groovy = """
+          media3_deps = """
           dependencies {
               implementation("androidx.media3:media3-exoplayer:1.4.1")
               implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
@@ -70,19 +68,13 @@ jobs:
           }
           """
 
-          gradle_kts = Path("android/app/build.gradle.kts")
-          gradle_groovy = Path("android/app/build.gradle")
-
-          if gradle_kts.exists():
-              gtxt = gradle_kts.read_text(encoding="utf-8")
-              if "media3-exoplayer" not in gtxt:
-                  gtxt += "\n" + media3_deps_groovy
-                  gradle_kts.write_text(gtxt, encoding="utf-8")
-          elif gradle_groovy.exists():
-              gtxt = gradle_groovy.read_text(encoding="utf-8")
-              if "media3-exoplayer" not in gtxt:
-                  gtxt += "\n" + media3_deps_groovy
-                  gradle_groovy.write_text(gtxt, encoding="utf-8")
+          for gfile in [Path("android/app/build.gradle.kts"), Path("android/app/build.gradle")]:
+              if gfile.exists():
+                  gtxt = gfile.read_text(encoding="utf-8")
+                  if "media3-exoplayer" not in gtxt:
+                      gtxt += "\n" + media3_deps
+                      gfile.write_text(gtxt, encoding="utf-8")
+                  break
           EOF
 
       - name: Install Dependencies

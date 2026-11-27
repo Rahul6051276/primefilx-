@@ -25,7 +25,6 @@ import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.KeyEvent
-import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -237,20 +236,16 @@ class CinemaPlayerActivity : Activity() {
             )
         }
 
-        val inflated = LayoutInflater.from(this).inflate(R.layout.activity_cinema_player, root, false)
-        root.addView(inflated)
+        playerView = PlayerView(this).apply {
+            useController = false
+            setBackgroundColor(Color.BLACK)
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        root.addView(playerView)
 
-        val foundPlayerView = findPlayerView(root)
-            ?: PlayerView(this).also {
-                it.useController = false
-                root.addView(it, 0)
-            }
-        playerView = foundPlayerView
-        playerView.useController = false
-        playerView.layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        )
         playerView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             if (!isSafeUi()) return@addOnLayoutChangeListener
             syncZoomScaleOnly(resizeModes[resizeIndex])
@@ -848,17 +843,6 @@ class CinemaPlayerActivity : Activity() {
             .replace(Regex("\\(\\d{4}\\)"), "")
             .replace(Regex("[^a-z0-9]"), "")
             .trim()
-
-    private fun findPlayerView(view: View): PlayerView? {
-        if (view is PlayerView) return view
-        if (view is ViewGroup) {
-            for (i in 0 until view.childCount) {
-                val found = findPlayerView(view.getChildAt(i))
-                if (found != null) return found
-            }
-        }
-        return null
-    }
 
     private fun findAspectFrameLayout(view: View): AspectRatioFrameLayout? {
         if (view is AspectRatioFrameLayout) return view
