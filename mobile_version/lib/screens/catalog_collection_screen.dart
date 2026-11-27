@@ -29,7 +29,7 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
   String _selectedFilter = 'popular';
   bool _isLoading = true;
   bool _isLoadingMore = false;
-  int _nextPageBatch = 5;
+  int _nextPageBatch = 6;
   String _errorText = '';
 
   @override
@@ -63,6 +63,73 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
     return '${now.year}-$m-$d';
   }
 
+  bool _isBlockedSerial(String title) {
+    final t = title.toLowerCase();
+    const blocked = [
+      'c.i.d.',
+      'cid',
+      'lapataganj',
+      'naagin',
+      'nagin',
+      'bhabiji',
+      'balika vadhu',
+      'kapil sharma',
+      'roadies',
+      'splitsvilla',
+      'bigg boss',
+      'khatron ke khiladi',
+      'taarak mehta',
+      'tmkoc',
+      'anupamaa',
+      'yeh rishta',
+      'ye rishta',
+      'yrkkh',
+      'kundali bhagya',
+      'kumkum bhagya',
+      'bhagya lakshmi',
+      'jhanak',
+      'ghkkpm',
+      'ghum hai',
+      'udaariyaan',
+      'parineetii',
+      'imlie',
+      'pandya store',
+      'saath nibhaana',
+      'diya aur baati',
+      'kasautii',
+      'ishqbaaaz',
+      'qubool hai',
+      'jamai raja',
+      'pavitra rishta',
+      'radhakrishn',
+      'mahabharat',
+      'ramayan',
+      'crime patrol',
+      'savdhaan india',
+      'adaalat',
+      'f.i.r.',
+      'tenali rama',
+      'baalveer',
+      'aladdin',
+      'watch what happens',
+      'tonight show',
+      'late show',
+      'daily show',
+      'good morning',
+      'sasural',
+      'suhaagan',
+      'dharampatnii',
+      'shravani',
+      'koffee with karan',
+      'indian idol',
+      'sa re ga ma',
+      'dance india dance',
+      'super dancer',
+      'kaun banega crorepati',
+    ];
+    return blocked.any((b) => t.contains(b));
+  }
+
   Future _fetchDiscoverPage({
     required String apiKey,
     required String langFilter,
@@ -80,7 +147,9 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
             : '&primary_release_date.lte=$today&vote_count.gte=2')
         : '';
 
-    final soapFilter = widget.isTv ? '&without_genres=10766' : '';
+    // 10766=Soap, 10767=Talk, 10764=Reality, 10763=News
+    final tvCleanFilter =
+        widget.isTv ? '&without_genres=10766,10767,10764,10763' : '';
 
     final uri = Uri.parse(
       'https://api.themoviedb.org/3/discover/$type'
@@ -88,7 +157,7 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
       '&with_original_language=$langFilter'
       '&sort_by=$sortBy'
       '$dateFilter'
-      '$soapFilter'
+      '$tvCleanFilter'
       '&page=$page',
     );
 
@@ -107,6 +176,18 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
         if (id <= 0 || posterPath.isEmpty) continue;
 
         final title = (raw['title'] ?? raw['name'] ?? 'Untitled').toString();
+        if (widget.isTv && _isBlockedSerial(title)) continue;
+
+        final genreIds = raw['genre_ids'];
+        if (widget.isTv && genreIds is List) {
+          if (genreIds.contains(10766) ||
+              genreIds.contains(10767) ||
+              genreIds.contains(10764) ||
+              genreIds.contains(10763)) {
+            continue;
+          }
+        }
+
         final releaseDate =
             (raw['release_date'] ?? raw['first_air_date'] ?? '').toString();
         final year = releaseDate.length >= 4 ? releaseDate.substring(0, 4) : '';
@@ -118,7 +199,7 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
 
         String regionTag = 'Hollywood';
         if (origLang == 'hi') {
-          regionTag = 'Bollywood';
+          regionTag = widget.isTv ? 'Hindi' : 'Bollywood';
         } else if (['te', 'ta', 'ml', 'kn'].contains(origLang)) {
           regionTag = 'South';
         }
@@ -152,7 +233,7 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
       _errorText = '';
       _items.clear();
       _seenIds.clear();
-      _nextPageBatch = 5;
+      _nextPageBatch = 6;
     });
 
     final apiKey = await AppSettingsService.getTmdbApiKey();
@@ -166,7 +247,7 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
     }
 
     final List futures = [];
-    for (int page = 1; page <= 4; page++) {
+    for (int page = 1; page <= 5; page++) {
       futures.add(_fetchDiscoverPage(apiKey: apiKey, langFilter: 'hi', page: page));
       futures.add(_fetchDiscoverPage(apiKey: apiKey, langFilter: 'en', page: page));
       futures.add(_fetchDiscoverPage(
@@ -204,7 +285,7 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
   }
 
   Future _loadMoreBatch() async {
-    if (_nextPageBatch > 15) return;
+    if (_nextPageBatch > 18) return;
     setState(() => _isLoadingMore = true);
 
     final apiKey = await AppSettingsService.getTmdbApiKey();
