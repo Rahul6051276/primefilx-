@@ -29,7 +29,7 @@ class MainActivity : FlutterActivity() {
                     val seekSeconds = call.argument<Int>("seekSeconds") ?: 15
                     val sourcesJson = call.argument<String>("sourcesJson") ?: ""
                     val activeIndex = call.argument<Int>("activeIndex") ?: 0
-                    val isTvDevice = false
+                    val isTvDevice = call.argument<Boolean>("isTvDevice") ?: false
 
                     if (url.isBlank() && tmdbId.isBlank() && sourcesJson.isBlank()) {
                         try {

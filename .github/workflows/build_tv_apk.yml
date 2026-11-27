@@ -44,10 +44,11 @@ jobs:
             cp /tmp/primeflix_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml 2>/dev/null || true
           fi
 
-      - name: Register CinemaPlayerActivity & Media3
+      - name: Register MainActivity, CinemaPlayerActivity & Media3
         working-directory: ./mobile_version
         run: |
           python3 - << 'EOF'
+          import re
           from pathlib import Path
 
           manifest = Path("android/app/src/main/AndroidManifest.xml")
@@ -55,6 +56,11 @@ jobs:
               txt = manifest.read_text(encoding="utf-8")
               if "<application" in txt and "android:usesCleartextTraffic" not in txt:
                   txt = txt.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
+              txt = re.sub(
+                  r'android:name="(\.?MainActivity|com\.primeflix\.[a-zA-Z0-9_.]*\.MainActivity|com\.netflixpro\.[a-zA-Z0-9_.]*\.MainActivity)"',
+                  'android:name="com.primeflix.app.MainActivity"',
+                  txt
+              )
               if "CinemaPlayerActivity" not in txt and "</application>" in txt:
                   activity_xml = """
                   <activity
