@@ -29,21 +29,23 @@ jobs:
           cache: true
 
       - name: Ensure Android Scaffolding & Custom Kotlin Files
+        working-directory: ./mobile_version
         run: |
           if [ ! -f "android/gradlew" ] || ( [ ! -f "android/settings.gradle" ] && [ ! -f "android/settings.gradle.kts" ] ); then
             mkdir -p /tmp/primeflix_backup
-            cp -r app/src/main/kotlin /tmp/primeflix_backup/ 2>/dev/null || true
             cp -r android/app/src/main/kotlin /tmp/primeflix_backup/ 2>/dev/null || true
-            cp app/src/main/AndroidManifest.xml /tmp/primeflix_backup/AndroidManifest.xml 2>/dev/null || true
+            cp -r android/app/src/main/res /tmp/primeflix_backup/ 2>/dev/null || true
             cp android/app/src/main/AndroidManifest.xml /tmp/primeflix_backup/AndroidManifest.xml 2>/dev/null || true
             rm -rf android
             flutter create . --platforms=android --org com.primeflix --project-name primeflix_app
             mkdir -p android/app/src/main
-            cp -r /tmp/primeflix_backup/kotlin android/app/src/main/ 2>/dev/null || true
+            cp -r /tmp/primeflix_backup/kotlin/* android/app/src/main/kotlin/ 2>/dev/null || true
+            cp -r /tmp/primeflix_backup/res/* android/app/src/main/res/ 2>/dev/null || true
             cp /tmp/primeflix_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml 2>/dev/null || true
           fi
 
       - name: Register CinemaPlayerActivity & Media3
+        working-directory: ./mobile_version
         run: |
           python3 - << 'EOF'
           from pathlib import Path
@@ -87,20 +89,22 @@ jobs:
           EOF
 
       - name: Install Dependencies
+        working-directory: ./mobile_version
         run: flutter pub get
 
       - name: Build Release APK
+        working-directory: ./mobile_version
         run: flutter build apk --release --dart-define=TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: primeflix-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: mobile_version/build/app/outputs/flutter-apk/app-release.apk
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: PrimeFlix v1.0.${{ github.run_number }}
-          files: build/app/outputs/flutter-apk/app-release.apk
+          files: mobile_version/build/app/outputs/flutter-apk/app-release.apk
