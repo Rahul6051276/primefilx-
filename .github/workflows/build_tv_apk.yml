@@ -28,24 +28,22 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Ensure Android Scaffolding Exists
-        working-directory: ./mobile_version
+      - name: Ensure Android Scaffolding & Custom Kotlin Files
         run: |
           if [ ! -f "android/gradlew" ] || ( [ ! -f "android/settings.gradle" ] && [ ! -f "android/settings.gradle.kts" ] ); then
             mkdir -p /tmp/primeflix_backup
+            cp -r app/src/main/kotlin /tmp/primeflix_backup/ 2>/dev/null || true
             cp -r android/app/src/main/kotlin /tmp/primeflix_backup/ 2>/dev/null || true
-            cp -r android/app/src/main/res /tmp/primeflix_backup/ 2>/dev/null || true
+            cp app/src/main/AndroidManifest.xml /tmp/primeflix_backup/AndroidManifest.xml 2>/dev/null || true
             cp android/app/src/main/AndroidManifest.xml /tmp/primeflix_backup/AndroidManifest.xml 2>/dev/null || true
             rm -rf android
             flutter create . --platforms=android --org com.primeflix --project-name primeflix_app
             mkdir -p android/app/src/main
             cp -r /tmp/primeflix_backup/kotlin android/app/src/main/ 2>/dev/null || true
-            cp -r /tmp/primeflix_backup/res android/app/src/main/ 2>/dev/null || true
             cp /tmp/primeflix_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml 2>/dev/null || true
           fi
 
-      - name: Configure Media3 & Cleartext Traffic
-        working-directory: ./mobile_version
+      - name: Register CinemaPlayerActivity & Media3
         run: |
           python3 - << 'EOF'
           from pathlib import Path
@@ -55,6 +53,17 @@ jobs:
               txt = manifest.read_text(encoding="utf-8")
               if "<application" in txt and "android:usesCleartextTraffic" not in txt:
                   txt = txt.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
+              if "CinemaPlayerActivity" not in txt and "</application>" in txt:
+                  activity_xml = """
+                  <activity
+                      android:name="com.primeflix.app.CinemaPlayerActivity"
+                      android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
+                      android:exported="false"
+                      android:launchMode="singleTop"
+                      android:screenOrientation="sensorLandscape"
+                      android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+                  </application>"""
+                  txt = txt.replace("</application>", activity_xml, 1)
               manifest.write_text(txt, encoding="utf-8")
 
           media3_deps = """
@@ -78,22 +87,20 @@ jobs:
           EOF
 
       - name: Install Dependencies
-        working-directory: ./mobile_version
         run: flutter pub get
 
       - name: Build Release APK
-        working-directory: ./mobile_version
         run: flutter build apk --release --dart-define=TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: primeflix-release-apk
-          path: mobile_version/build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: PrimeFlix v1.0.${{ github.run_number }}
-          files: mobile_version/build/app/outputs/flutter-apk/app-release.apk
+          files: build/app/outputs/flutter-apk/app-release.apk
