@@ -22,14 +22,14 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
   static const Color _cardDark = Color(0xFF15202B);
   static const Color _primeBlue = Color(0xFF00A8E1);
 
-  final List> _items = [];
-  final Set<int> _seenIds = {};
+  final List _items = [];
+  final Set _seenIds = {};
   final ScrollController _scrollController = ScrollController();
 
-  String _selectedFilter = 'popular'; // 'popular' or 'latest'
+  String _selectedFilter = 'popular';
   bool _isLoading = true;
   bool _isLoadingMore = false;
-  int _nextPageBatch = 5; // Pages 1..4 load initially (240+ items)
+  int _nextPageBatch = 5;
   String _errorText = '';
 
   @override
@@ -63,7 +63,7 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
     return '${now.year}-$m-$d';
   }
 
-  Future<List>> _fetchDiscoverPage({
+  Future _fetchDiscoverPage({
     required String apiKey,
     required String langFilter,
     required int page,
@@ -99,7 +99,7 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
       final results = decoded['results'];
       if (results is! List) return [];
 
-      final parsed = >[];
+      final List parsed = [];
       for (final raw in results) {
         if (raw is! Map) continue;
         final id = int.tryParse((raw['id'] ?? '').toString()) ?? 0;
@@ -123,7 +123,7 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
           regionTag = 'South';
         }
 
-        parsed.add({
+        parsed.add(<String, dynamic>{
           'id': id,
           'tmdb_id': id,
           'title': title,
@@ -146,7 +146,7 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
     }
   }
 
-  Future<void> _loadInitial200Plus() async {
+  Future _loadInitial200Plus() async {
     setState(() {
       _isLoading = true;
       _errorText = '';
@@ -165,8 +165,7 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
       return;
     }
 
-    // Hindi + Hollywood (en) + South (te|ta|ml|kn) ke 4-4 pages = ~240 items
-    final futures = <Future<List>>>[];
+    final List futures = [];
     for (int page = 1; page <= 4; page++) {
       futures.add(_fetchDiscoverPage(apiKey: apiKey, langFilter: 'hi', page: page));
       futures.add(_fetchDiscoverPage(apiKey: apiKey, langFilter: 'en', page: page));
@@ -174,20 +173,19 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
           apiKey: apiKey, langFilter: 'te|ta|ml|kn', page: page));
     }
 
-    final batches = await Future.wait(futures);
+    final batches = await Future.wait(futures.cast());
     if (!mounted) return;
 
-    // Interleave Hindi, Hollywood, South so collection feels balanced
-    final combined = >[];
+    final List combined = [];
     int maxLen = 0;
     for (final b in batches) {
-      if (b.length > maxLen) maxLen = b.length;
+      if (b is List && b.length > maxLen) maxLen = b.length;
     }
     for (int i = 0; i < maxLen; i++) {
       for (final b in batches) {
-        if (i < b.length) {
+        if (b is List && i < b.length) {
           final item = b[i];
-          final id = item['id'] as int;
+          final id = item['id'];
           if (_seenIds.add(id)) {
             combined.add(item);
           }
@@ -199,12 +197,13 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
       _items.addAll(combined);
       _isLoading = false;
       if (_items.isEmpty) {
-        _errorText = 'Collection load nahi ho paya. Internet ya TMDB key check karein.';
+        _errorText =
+            'Collection load nahi ho paya. Internet ya TMDB key check karein.';
       }
     });
   }
 
-  Future<void> _loadMoreBatch() async {
+  Future _loadMoreBatch() async {
     if (_nextPageBatch > 15) return;
     setState(() => _isLoadingMore = true);
 
@@ -222,12 +221,14 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
     ]);
 
     if (!mounted) return;
-    final added = >[];
+    final List added = [];
     for (final b in batches) {
-      for (final item in b) {
-        final id = item['id'] as int;
-        if (_seenIds.add(id)) {
-          added.add(item);
+      if (b is List) {
+        for (final item in b) {
+          final id = item['id'];
+          if (_seenIds.add(id)) {
+            added.add(item);
+          }
         }
       }
     }
@@ -386,7 +387,7 @@ class _CatalogCollectionScreenState extends State<CatalogCollectionScreen> {
                       );
                     }
 
-                    final item = _items[index];
+                    final item = Map<String, dynamic>.from(_items[index]);
                     return GestureDetector(
                       onTap: () => widget.onItemTap(item),
                       child: Column(
