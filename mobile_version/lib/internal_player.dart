@@ -1,7 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'services/native_media3_player.dart';
+import 'services/app_settings_service.dart';
 import 'services/stream_service.dart';
 
 class InternalPlayer extends StatefulWidget {
@@ -10,6 +11,7 @@ class InternalPlayer extends StatefulWidget {
   final bool isTv;
   final int? season;
   final int? episode;
+  final String? directUrl;
 
   const InternalPlayer({
     super.key,
@@ -18,6 +20,7 @@ class InternalPlayer extends StatefulWidget {
     required this.isTv,
     this.season,
     this.episode,
+    this.directUrl,
   });
 
   @override
@@ -26,6 +29,7 @@ class InternalPlayer extends StatefulWidget {
 
 class _InternalPlayerState extends State<InternalPlayer> {
   static const Color _primeBlue = Color(0xFF00A8E1);
+  static const MethodChannel _playerChannel = MethodChannel('com.primeflix/player');
 
   final List<StreamLink> _servers = [];
   StreamSubscription<StreamLink>? _streamSub;
@@ -37,52 +41,64 @@ class _InternalPlayerState extends State<InternalPlayer> {
   void initState() {
     super.initState();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    _fetchAndLaunchNative();
+    _startPlayerFlow();
   }
 
-  List _serializeServers() {
-    final out = [];
-    for (final s in _servers) {
-      out.add({
-        'url': s.url,
-        'title': s.title,
-        'providerName': s.providerName,
-        'quality': s.quality,
-        'headers': s.headers,
-      });
+  String get _displayTitle {
+    if (widget.isTv) {
+      return '${widget.title} • S${widget.season ?? 1}E${widget.episode ?? 1}';
     }
-    return out;
+    return widget.title;
   }
 
-  Future<void> _openNativeWithCurrentServers() async {
-    if (_servers.isEmpty || _launchedNative || !mounted) return;
+  Future<void> _launchCinemaPlayer({
+    String url = '',
+    List> sources = const [],
+  }) async {
+    if (_launchedNative || !mounted) return;
     _launchedNative = true;
 
-    final displayTitle = widget.isTv
-        ? '${widget.title} • S${widget.season ?? 1}E${widget.episode ?? 1}'
-        : widget.title;
+    final gistUrl = await AppSettingsService.getGistUrl();
+    final tmdbKey = await AppSettingsService.getTmdbApiKey();
+    final seekSeconds = await AppSettingsService.getSeekSeconds();
 
-    final first = _servers.first;
-    final ok = await NativeMedia3Player.play(
-      url: first.url,
-      title: displayTitle,
-      headers: first.headers,
-      servers: _serializeServers(),
-    );
-
-    if (!mounted) return;
-    if (!ok) {
+    try {
+      await _playerChannel.invokeMethod<bool>('playVideo', {
+        'url': url,
+        'title': _displayTitle,
+        'tmdbId': widget.tmdbId > 0 ? widget.tmdbId.toString() : '',
+        'tmdbKey': tmdbKey,
+        'gistUrl': gistUrl,
+        'isTv': widget.isTv,
+        'season': widget.season ?? 1,
+        'episode': widget.episode ?? 1,
+        'seekSeconds': seekSeconds,
+        'sourcesJson': sources.isNotEmpty ? jsonEncode(sources) : '',
+        'activeIndex': 0,
+        'isTvDevice': false,
+      });
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
         _launchedNative = false;
-        _statusMessage = 'Native Media3 player start nahi ho saka.';
+        _isSearching = false;
+        _statusMessage = 'Native player launch error: $e';
       });
       return;
     }
 
-    Navigator.of(context).pop();
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
   }
 
-  void _fetchAndLaunchNative() {
+  Future<void> _startPlayerFlow() async {
+    final direct = (widget.directUrl ?? '').trim();
+    if (direct.isNotEmpty) {
+      await _launchCinemaPlayer(url: direct);
+      return;
+    }
+
     setState(() {
       _isSearching = true;
       _statusMessage = null;
@@ -102,14 +118,20 @@ class _InternalPlayerState extends State<InternalPlayer> {
           _servers.add(link);
         }
         if (!_launchedNative && _servers.isNotEmpty) {
-          await _openNativeWithCurrentServers();
+          await _launchCinemaPlayer(
+            url: _servers.first.url,
+            sources: _servers.map((e) => e.toPlayerMap()).toList(),
+          );
         }
       },
-      onDone: () {
+      onDone: () async {
         if (!mounted) return;
         setState(() => _isSearching = false);
         if (!_launchedNative && _servers.isNotEmpty) {
-          _openNativeWithCurrentServers();
+          await _launchCinemaPlayer(
+            url: _servers.first.url,
+            sources: _servers.map((e) => e.toPlayerMap()).toList(),
+          );
         }
       },
       onError: (_) {
@@ -129,10 +151,6 @@ class _InternalPlayerState extends State<InternalPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    final displayTitle = widget.isTv
-        ? '${widget.title} • S${widget.season ?? 1}E${widget.episode ?? 1}'
-        : widget.title;
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: Center(
@@ -143,7 +161,8 @@ class _InternalPlayerState extends State<InternalPlayer> {
                   const CircularProgressIndicator(color: _primeBlue),
                   const SizedBox(height: 16),
                   Text(
-                    displayTitle,
+                    _displayTitle,
+                    textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -152,7 +171,8 @@ class _InternalPlayerState extends State<InternalPlayer> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _statusMessage ?? 'Loading HD stream for Media3 Player...',
+                    _statusMessage ?? 'Connecting stream for Cinema Player...',
+                    textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white70, fontSize: 13),
                   ),
                 ],
@@ -162,20 +182,15 @@ class _InternalPlayerState extends State<InternalPlayer> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.error_outline,
-                      color: _primeBlue,
-                      size: 48,
-                    ),
+                    const Icon(Icons.error_outline, color: _primeBlue, size: 48),
                     const SizedBox(height: 12),
                     const Text(
-                      'No working stream found from your Gist providers.',
+                      'No stream found. Settings mein Gist URL / TMDB API Key check karein.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Colors.white70, fontSize: 14),
                     ),
                     const SizedBox(height: 16),
                     ElevatedButton(
-                      autofocus: true,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _primeBlue,
                         foregroundColor: Colors.white,

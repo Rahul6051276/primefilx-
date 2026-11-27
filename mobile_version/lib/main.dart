@@ -1,18 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:media_kit/media_kit.dart';
 import 'screens/mobile_home_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  MediaKit.ensureInitialized();
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: Color(0xFF0F171E),
+      systemNavigationBarColor: Color(0xFF15202B),
       systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
@@ -25,28 +23,23 @@ class PrimeFlixApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Shortcuts(
-      shortcuts: <LogicalKeySet, Intent>{
-        LogicalKeySet(LogicalKeyboardKey.select): const ActivateIntent(),
-      },
-      child: MaterialApp(
-        title: 'PrimeFlix',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData.dark().copyWith(
-          scaffoldBackgroundColor: const Color(0xFF0F171E),
-          primaryColor: const Color(0xFF00A8E1),
-          colorScheme: const ColorScheme.dark(
-            primary: Color(0xFF00A8E1),
-            secondary: Color(0xFF00A8E1),
-            surface: Color(0xFF1A242F),
-          ),
-          appBarTheme: const AppBarTheme(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-          ),
+    return MaterialApp(
+      title: 'PrimeFlix',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: const Color(0xFF0B1118),
+        primaryColor: const Color(0xFF00A8E1),
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFF00A8E1),
+          secondary: Color(0xFF00A8E1),
+          surface: Color(0xFF15202B),
         ),
-        home: const PrimeFlixIntroScreen(),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF0B1118),
+          elevation: 0,
+        ),
       ),
+      home: const PrimeFlixIntroScreen(),
     );
   }
 }
@@ -70,10 +63,10 @@ class _PrimeFlixIntroScreenState extends State<PrimeFlixIntroScreen>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1800),
+      duration: const Duration(milliseconds: 1600),
     );
 
-    _scaleAnim = Tween<double>(begin: 0.72, end: 1.08).animate(
+    _scaleAnim = Tween<double>(begin: 0.78, end: 1.05).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
     );
 
@@ -86,11 +79,11 @@ class _PrimeFlixIntroScreenState extends State<PrimeFlixIntroScreen>
 
     _controller.forward();
 
-    _navTimer = Timer(const Duration(milliseconds: 2500), () {
+    _navTimer = Timer(const Duration(milliseconds: 2200), () {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
-          transitionDuration: const Duration(milliseconds: 500),
+          transitionDuration: const Duration(milliseconds: 450),
           pageBuilder: (_, __, ___) => const MobileHomeScreen(),
           transitionsBuilder: (_, animation, __, child) {
             return FadeTransition(opacity: animation, child: child);
@@ -123,30 +116,24 @@ class _PrimeFlixIntroScreenState extends State<PrimeFlixIntroScreen>
                   'PRIMEFLIX',
                   style: TextStyle(
                     color: const Color(0xFF00A8E1),
-                    fontSize: 44,
+                    fontSize: 42,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: 6,
+                    letterSpacing: 5,
                     shadows: [
                       Shadow(
-                        color: const Color(0xFF00A8E1).withOpacity(0.75),
-                        blurRadius: 28,
+                        color: const Color(0xFF00A8E1).withOpacity(0.7),
+                        blurRadius: 24,
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 12),
                 Container(
-                  width: 90,
+                  width: 84,
                   height: 3,
                   decoration: BoxDecoration(
                     color: const Color(0xFF00A8E1),
                     borderRadius: BorderRadius.circular(2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF00A8E1).withOpacity(0.8),
-                        blurRadius: 12,
-                      ),
-                    ],
                   ),
                 ),
               ],

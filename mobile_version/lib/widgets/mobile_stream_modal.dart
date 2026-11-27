@@ -1,30 +1,41 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../internal_player.dart';
 import '../services/tmdb_service.dart';
 
 class MobileStreamModal extends StatefulWidget {
-  final Map item;
+  final Map<String, dynamic> item;
+  final VoidCallback? onListChanged;
 
-  const MobileStreamModal({super.key, required this.item});
+  const MobileStreamModal({
+    super.key,
+    required this.item,
+    this.onListChanged,
+  });
 
-  static void show(BuildContext context, dynamic item) {
+  static void show(
+    BuildContext context,
+    dynamic item, {
+    VoidCallback? onListChanged,
+  }) {
     final size = MediaQuery.of(context).size;
-    final isWide = size.width > 600;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF0F171E),
+      backgroundColor: const Color(0xFF0C1219),
       constraints: BoxConstraints(
-        maxWidth: isWide ? size.width * 0.85 : size.width,
-        maxHeight: size.height * (isWide ? 0.94 : 0.92),
+        maxWidth: size.width,
+        maxHeight: size.height * 0.92,
       ),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (_) => MobileStreamModal(
-        item: Map.from(item as Map),
+        item: Map<String, dynamic>.from(item as Map),
+        onListChanged: onListChanged,
       ),
     );
   }
@@ -35,25 +46,34 @@ class MobileStreamModal extends StatefulWidget {
 
 class _MobileStreamModalState extends State<MobileStreamModal> {
   static const Color _primeBlue = Color(0xFF00A8E1);
-  static const Color _darkBg = Color(0xFF0F171E);
-  static const Color _cardBg = Color(0xFF1A242F);
+  static const Color _darkBg = Color(0xFF0C1219);
+  static const Color _cardBg = Color(0xFF16202C);
 
   bool _showEpisodes = false;
   bool _loadingSeasons = false;
   bool _loadingEpisodes = false;
+  bool _inMyList = false;
 
-  List<dynamic> _seasons = [];
-  List<dynamic> _episodes = [];
+  List> _seasons = [];
+  List> _episodes = [];
   int _selectedSeason = 1;
 
+  @override
+  void initState() {
+    super.initState();
+    _checkMyList();
+  }
+
   bool get _isTv {
+    if (widget.item['isTv'] == true) return true;
     final type = widget.item['media_type'];
     if (type == 'tv') return true;
     if (type == 'movie') return false;
     return widget.item['first_air_date'] != null;
   }
 
-  int get _tmdbId => (widget.item['id'] as num?)?.toInt() ?? 0;
+  int get _tmdbId =>
+      ((widget.item['tmdb_id'] ?? widget.item['id']) as num?)?.toInt() ?? 0;
 
   String get _title =>
       (widget.item['title'] ?? widget.item['name'] ?? 'Untitled').toString();
@@ -62,17 +82,76 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
       (widget.item['overview'] ?? 'No description available.').toString();
 
   String get _year {
-    final date = (widget.item['release_date'] ??
+    final raw = (widget.item['year'] ??
+            widget.item['release_date'] ??
             widget.item['first_air_date'] ??
             '')
         .toString();
-    return date.length >= 4 ? date.substring(0, 4) : '';
+    return raw.length >= 4 ? raw.substring(0, 4) : '';
   }
 
   String get _rating {
-    final v = widget.item['vote_average'];
+    final v = widget.item['rating'] ?? widget.item['vote_average'];
     if (v is num && v > 0) return v.toStringAsFixed(1);
+    final parsed = double.tryParse(v?.toString() ?? '');
+    if (parsed != null && parsed > 0) return parsed.toStringAsFixed(1);
     return 'HD';
+  }
+
+  Future<void> _checkMyList() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('my_list_mobile') ?? '[]';
+      final List list = jsonDecode(raw);
+      final exists = list.any(
+        (e) => ((e['tmdb_id'] ?? e['id'])?.toString() ?? '') == _tmdbId.toString(),
+      );
+      if (mounted) setState(() => _inMyList = exists);
+    } catch (_) {}
+  }
+
+  Future<void> _toggleMyList() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('my_list_mobile') ?? '[]';
+      final List list = List.from(jsonDecode(raw));
+
+      if (_inMyList) {
+        list.removeWhere(
+          (e) => ((e['tmdb_id'] ?? e['id'])?.toString() ?? '') == _tmdbId.toString(),
+        );
+      } else {
+        list.insert(0, {
+          'tmdb_id': _tmdbId,
+          'id': _tmdbId,
+          'title': _title,
+          'overview': _overview,
+          'poster_path': widget.item['poster_path'],
+          'backdrop_path': widget.item['backdrop_path'],
+          'poster': TmdbService.getPosterUrl(
+            widget.item['poster_path'] ?? widget.item['poster'],
+          ),
+          'isTv': _isTv,
+          'media_type': _isTv ? 'tv' : 'movie',
+          'vote_average': _rating,
+        });
+      }
+
+      await prefs.setString('my_list_mobile', jsonEncode(list));
+      if (!mounted) return;
+      setState(() => _inMyList = !_inMyList);
+      widget.onListChanged?.call();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: _cardBg,
+          content: Text(
+            _inMyList ? '$_title My List mein add ho gaya' : '$_title My List se hat gaya',
+          ),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    } catch (_) {}
   }
 
   void _openPlayer({int? season, int? episode}) {
@@ -115,9 +194,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
       });
       await _loadEpisodes(firstSeason);
     } else {
-      setState(() {
-        _loadingSeasons = false;
-      });
+      setState(() => _loadingSeasons = false);
     }
   }
 
@@ -138,16 +215,17 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
 
   @override
   Widget build(BuildContext context) {
-    final isWide = MediaQuery.of(context).size.width > 600;
-    final backdropHeight = isWide ? 160.0 : 210.0;
     final backdropUrl = TmdbService.getBackdropUrl(
-      widget.item['backdrop_path'] ?? widget.item['poster_path'],
+      widget.item['backdrop_path'] ??
+          widget.item['backdrop'] ??
+          widget.item['poster_path'] ??
+          widget.item['poster'],
     );
 
     return DraggableScrollableSheet(
-      initialChildSize: isWide ? 0.94 : (_showEpisodes ? 0.88 : 0.68),
+      initialChildSize: _showEpisodes ? 0.88 : 0.72,
       minChildSize: 0.5,
-      maxChildSize: 0.96,
+      maxChildSize: 0.95,
       expand: false,
       builder: (ctx, scrollController) {
         return SingleChildScrollView(
@@ -155,31 +233,23 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Top Backdrop
               Stack(
                 children: [
                   ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(20),
-                    ),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
                     child: backdropUrl.isNotEmpty
                         ? CachedNetworkImage(
                             imageUrl: backdropUrl,
-                            height: backdropHeight,
+                            height: 215,
                             width: double.infinity,
                             fit: BoxFit.cover,
                           )
-                        : Container(
-                            height: backdropHeight,
-                            color: _cardBg,
-                          ),
+                        : Container(height: 215, color: _cardBg),
                   ),
                   Container(
-                    height: backdropHeight,
+                    height: 215,
                     decoration: const BoxDecoration(
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(20),
-                      ),
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
@@ -188,12 +258,11 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                     ),
                   ),
                   Positioned(
-                    top: 10,
-                    right: 10,
+                    top: 12,
+                    right: 12,
                     child: CircleAvatar(
                       backgroundColor: Colors.black54,
                       child: IconButton(
-                        focusColor: _primeBlue.withOpacity(0.5),
                         icon: const Icon(Icons.close, color: Colors.white),
                         onPressed: () => Navigator.pop(context),
                       ),
@@ -201,8 +270,6 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                   ),
                 ],
               ),
-
-              // Title, Meta & Watch Now
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 18),
                 child: Column(
@@ -213,20 +280,17 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 22,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
                             color: _primeBlue,
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: BorderRadius.circular(5),
                           ),
                           child: Text(
                             _isTv ? 'WEB SERIES' : 'MOVIE',
@@ -237,69 +301,68 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        if (_year.isNotEmpty)
-                          Text(
-                            _year,
-                            style: const TextStyle(color: Colors.white70),
-                          ),
+                        if (_year.isNotEmpty) ...[
+                          const SizedBox(width: 10),
+                          Text(_year, style: const TextStyle(color: Colors.white70)),
+                        ],
                         const SizedBox(width: 10),
                         const Icon(Icons.star, color: Colors.amber, size: 16),
                         const SizedBox(width: 4),
-                        Text(
-                          _rating,
-                          style: const TextStyle(color: Colors.white70),
+                        Text(_rating, style: const TextStyle(color: Colors.white70)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 48,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _primeBlue,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              onPressed: _onWatchNowPressed,
+                              icon: const Icon(Icons.play_arrow, size: 24),
+                              label: Text(
+                                _isTv
+                                    ? (_showEpisodes ? 'Episodes Below' : 'Watch Series')
+                                    : 'Watch Now',
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          height: 48,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: BorderSide(
+                                color: _inMyList ? _primeBlue : Colors.white24,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            onPressed: _toggleMyList,
+                            icon: Icon(
+                              _inMyList ? Icons.check : Icons.bookmark_add_outlined,
+                              color: _inMyList ? _primeBlue : Colors.white,
+                            ),
+                            label: Text(_inMyList ? 'Saved' : 'My List'),
+                          ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 14),
-
-                    // Watch Now Button (TV Remote Autofocus)
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton.icon(
-                        autofocus: true,
-                        style: ButtonStyle(
-                          backgroundColor:
-                              WidgetStateProperty.all(_primeBlue),
-                          foregroundColor:
-                              WidgetStateProperty.all(Colors.white),
-                          overlayColor: WidgetStateProperty.all(
-                            Colors.white.withOpacity(0.2),
-                          ),
-                          side: WidgetStateProperty.resolveWith((states) {
-                            if (states.contains(WidgetState.focused)) {
-                              return const BorderSide(
-                                color: Colors.white,
-                                width: 3,
-                              );
-                            }
-                            return BorderSide.none;
-                          }),
-                          shape: WidgetStateProperty.all(
-                            RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        ),
-                        onPressed: _onWatchNowPressed,
-                        icon: const Icon(Icons.play_arrow, size: 26),
-                        label: Text(
-                          _isTv
-                              ? (_showEpisodes
-                                  ? 'Select Episode Below'
-                                  : 'Watch Now (Episodes)')
-                              : 'Watch Now',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
                     Text(
                       _overview,
                       maxLines: _showEpisodes ? 2 : 4,
@@ -307,22 +370,17 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                       style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 13.5,
-                        height: 1.4,
+                        height: 1.45,
                       ),
                     ),
-
-                    // Web Series Seasons & Episodes
                     if (_showEpisodes && _isTv) ...[
-                      const SizedBox(height: 14),
-                      const Divider(color: Colors.white24),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 16),
+                      const Divider(color: Colors.white12),
                       if (_loadingSeasons)
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(16),
-                            child: CircularProgressIndicator(
-                              color: _primeBlue,
-                            ),
+                        const Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Center(
+                            child: CircularProgressIndicator(color: _primeBlue),
                           ),
                         )
                       else ...[
@@ -345,8 +403,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                                 underline: const SizedBox(),
                                 items: _seasons.map((s) {
                                   final numVal =
-                                      (s['season_number'] as num?)?.toInt() ??
-                                          1;
+                                      (s['season_number'] as num?)?.toInt() ?? 1;
                                   return DropdownMenuItem<int>(
                                     value: numVal,
                                     child: Text('Season $numVal'),
@@ -360,12 +417,10 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                         ),
                         const SizedBox(height: 10),
                         if (_loadingEpisodes)
-                          const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(20),
-                              child: CircularProgressIndicator(
-                                color: _primeBlue,
-                              ),
+                          const Padding(
+                            padding: EdgeInsets.all(20),
+                            child: Center(
+                              child: CircularProgressIndicator(color: _primeBlue),
                             ),
                           )
                         else
@@ -373,22 +428,16 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
                             itemCount: _episodes.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 10),
+                            separatorBuilder: (_, __) => const SizedBox(height: 10),
                             itemBuilder: (_, index) {
                               final ep = _episodes[index];
                               final epNum =
-                                  (ep['episode_number'] as num?)?.toInt() ??
-                                      (index + 1);
-                              final epName =
-                                  (ep['name'] ?? 'Episode $epNum').toString();
-                              final stillUrl = TmdbService.getPosterUrl(
-                                ep['still_path'],
-                              );
+                                  (ep['episode_number'] as num?)?.toInt() ?? (index + 1);
+                              final epName = (ep['name'] ?? 'Episode $epNum').toString();
+                              final stillUrl = TmdbService.getPosterUrl(ep['still_path']);
 
                               return InkWell(
                                 borderRadius: BorderRadius.circular(10),
-                                focusColor: _primeBlue.withOpacity(0.4),
                                 onTap: () => _openPlayer(
                                   season: _selectedSeason,
                                   episode: epNum,
@@ -406,12 +455,12 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                                         child: stillUrl.isNotEmpty
                                             ? CachedNetworkImage(
                                                 imageUrl: stillUrl,
-                                                width: 110,
+                                                width: 112,
                                                 height: 64,
                                                 fit: BoxFit.cover,
                                               )
                                             : Container(
-                                                width: 110,
+                                                width: 112,
                                                 height: 64,
                                                 color: Colors.black54,
                                                 child: const Icon(
@@ -423,8 +472,7 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
+                                          crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               '$epNum. $epName',

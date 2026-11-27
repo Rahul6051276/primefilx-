@@ -28,13 +28,62 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Regenerate Fresh Android Project
+      - name: Ensure Android Scaffolding Exists
         working-directory: ./mobile_version
         run: |
-          cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml
-          rm -rf android
-          flutter create . --platforms=android
-          cp /tmp/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          if [ ! -f "android/gradlew" ] || [ ! -f "android/settings.gradle" ] && [ ! -f "android/settings.gradle.kts" ]; then
+            mkdir -p /tmp/primeflix_backup
+            cp -r android/app/src/main/kotlin /tmp/primeflix_backup/ 2>/dev/null || true
+            cp -r android/app/src/main/res /tmp/primeflix_backup/ 2>/dev/null || true
+            cp android/app/src/main/AndroidManifest.xml /tmp/primeflix_backup/AndroidManifest.xml 2>/dev/null || true
+            rm -rf android
+            flutter create . --platforms=android --org com.primeflix --project-name primeflix_app
+            mkdir -p android/app/src/main
+            cp -r /tmp/primeflix_backup/kotlin android/app/src/main/ 2>/dev/null || true
+            cp -r /tmp/primeflix_backup/res android/app/src/main/ 2>/dev/null || true
+            cp /tmp/primeflix_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml 2>/dev/null || true
+          fi
+
+      - name: Configure Media3 & Cleartext Traffic
+        working-directory: ./mobile_version
+        run: |
+          python3 - << 'EOF'
+          from pathlib import Path
+
+          # 1. AndroidManifest.xml mein usesCleartextTraffic ensure karein
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          if manifest.exists():
+              txt = manifest.read_text(encoding="utf-8")
+              if "<application" in txt and "android:usesCleartextTraffic" not in txt:
+                  txt = txt.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
+              manifest.write_text(txt, encoding="utf-8")
+
+          # 2. app/build.gradle ya app/build.gradle.kts mein Media3 dependencies jodein
+          media3_deps_groovy = """
+          dependencies {
+              implementation("androidx.media3:media3-exoplayer:1.4.1")
+              implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+              implementation("androidx.media3:media3-exoplayer-dash:1.4.1")
+              implementation("androidx.media3:media3-ui:1.4.1")
+              implementation("androidx.media3:media3-effect:1.4.1")
+              implementation("androidx.media3:media3-common:1.4.1")
+          }
+          """
+
+          gradle_kts = Path("android/app/build.gradle.kts")
+          gradle_groovy = Path("android/app/build.gradle")
+
+          if gradle_kts.exists():
+              gtxt = gradle_kts.read_text(encoding="utf-8")
+              if "media3-exoplayer" not in gtxt:
+                  gtxt += "\n" + media3_deps_groovy
+                  gradle_kts.write_text(gtxt, encoding="utf-8")
+          elif gradle_groovy.exists():
+              gtxt = gradle_groovy.read_text(encoding="utf-8")
+              if "media3-exoplayer" not in gtxt:
+                  gtxt += "\n" + media3_deps_groovy
+                  gradle_groovy.write_text(gtxt, encoding="utf-8")
+          EOF
 
       - name: Install Dependencies
         working-directory: ./mobile_version

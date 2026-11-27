@@ -1,5 +1,5 @@
 name: primeflix
-description: HD Streaming App with Native MediaKit Player
+description: PrimeFlix Mobile Streaming App with Native Media3 Player
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -12,10 +12,6 @@ dependencies:
   http: ^1.2.1
   shared_preferences: ^2.2.3
   cached_network_image: ^3.3.1
-  media_kit: ^1.1.11
-  media_kit_video: ^1.2.5
-  media_kit_libs_video: ^1.0.5
-  screen_brightness: ^2.1.11
 
 dev_dependencies:
   flutter_test:
