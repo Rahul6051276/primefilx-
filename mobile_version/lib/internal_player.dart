@@ -2,47 +2,53 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'tmdb_config.dart';
+import 'services/app_settings_service.dart';
+import 'services/stream_service.dart';
 
-class InternalPlayerScreen extends StatefulWidget {
-  final String streamUrl;
+class InternalPlayer extends StatefulWidget {
+  final int tmdbId;
   final String title;
-  final String tmdbId;
   final bool isTv;
-  final int season;
-  final int episode;
-  final List<dynamic> sources;
-  final int initialIndex;
+  final int? season;
+  final int? episode;
+  final String? directUrl;
 
-  InternalPlayerScreen({
+  const InternalPlayer({
     super.key,
-    String? videoUrl,
-    String? streamUrl,
+    required this.tmdbId,
     required this.title,
-    this.tmdbId = '',
-    this.isTv = false,
-    this.season = 1,
-    this.episode = 1,
-    this.sources = const [],
-    this.initialIndex = 0,
-  }) : streamUrl = (streamUrl != null && streamUrl.isNotEmpty)
-            ? streamUrl
-            : (videoUrl ?? '');
+    required this.isTv,
+    this.season,
+    this.episode,
+    this.directUrl,
+  });
 
   @override
-  State<InternalPlayerScreen> createState() => _InternalPlayerScreenState();
+  State<InternalPlayer> createState() => _InternalPlayerState();
 }
 
-class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
+class _InternalPlayerState extends State<InternalPlayer> {
+  static const Color _primeBlue = Color(0xFF00A8E1);
   static const MethodChannel _playerChannel = MethodChannel('com.primeflix/player');
 
-  bool _hasError = false;
-  String _errorMessage = '';
+  final List<StreamLink> _servers = [];
+  StreamSubscription<StreamLink>? _streamSub;
+  bool _isSearching = true;
+  bool _launchedNative = false;
+  String? _statusMessage;
 
   @override
   void initState() {
     super.initState();
-    _launchNativeCinemaPlayer();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    _startPlayerFlow();
+  }
+
+  String get _displayTitle {
+    if (widget.isTv) {
+      return '${widget.title} • S${widget.season ?? 1}E${widget.episode ?? 1}';
+    }
+    return widget.title;
   }
 
   Future<void> _restorePortraitMode() async {
@@ -53,68 +59,110 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
-  Future<void> _launchNativeCinemaPlayer() async {
-    final cleanUrl = widget.streamUrl.trim();
-    final encodedSources =
-        widget.sources.isNotEmpty ? jsonEncode(widget.sources) : '';
-    final savedGistUrl = await MobileConfig.getGistUrl();
+  Future<void> _launchCinemaPlayer({
+    String url = '',
+    List> sources = const [],
+  }) async {
+    if (_launchedNative || !mounted) return;
+    _launchedNative = true;
 
-    if (cleanUrl.isEmpty &&
-        encodedSources.isEmpty &&
-        widget.tmdbId.trim().isEmpty) {
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _errorMessage = 'Stream URL खाली या अमान्य है।';
-        });
-      }
+    final gistUrl = await AppSettingsService.getGistUrl();
+    final tmdbKey = await AppSettingsService.getTmdbApiKey();
+    final seekSeconds = await AppSettingsService.getSeekSeconds();
+
+    try {
+      await _playerChannel.invokeMethod('playVideo', {
+        'url': url,
+        'title': _displayTitle,
+        'tmdbId': widget.tmdbId > 0 ? widget.tmdbId.toString() : '',
+        'tmdbKey': tmdbKey,
+        'gistUrl': gistUrl,
+        'isTv': widget.isTv,
+        'season': widget.season ?? 1,
+        'episode': widget.episode ?? 1,
+        'seekSeconds': seekSeconds,
+        'sourcesJson': sources.isNotEmpty ? jsonEncode(sources) : '',
+        'activeIndex': 0,
+        'isTvDevice': false,
+      });
+      await _restorePortraitMode();
+    } catch (e) {
+      await _restorePortraitMode();
+      if (!mounted) return;
+      setState(() {
+        _launchedNative = false;
+        _isSearching = false;
+        _statusMessage = 'Native player launch error: $e';
+      });
       return;
     }
 
-    final args = <String, dynamic>{
-      'url': cleanUrl,
-      'title': widget.title,
-      'tmdbId': widget.tmdbId,
-      'tmdbKey': MobileConfig.tmdbKey,
-      'gistUrl': savedGistUrl,
-      'isTv': widget.isTv,
-      'season': widget.season,
-      'episode': widget.episode,
-      'isTvDevice': false,
-      'seekSeconds': 15,
-      'sourcesJson': encodedSources,
-      'activeIndex': widget.initialIndex,
-      'userAgent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    };
-
-    try {
-      await _playerChannel.invokeMethod('playVideo', args);
-      await _restorePortraitMode();
-      if (mounted && Navigator.canPop(context)) {
-        Navigator.of(context).pop();
-      }
-    } on PlatformException catch (e) {
-      await _restorePortraitMode();
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _errorMessage = e.message ?? 'Native player open नहीं हो पाया।';
-        });
-      }
-    } catch (e) {
-      await _restorePortraitMode();
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _errorMessage = e.toString();
-        });
-      }
+    if (mounted && Navigator.canPop(context)) {
+      Navigator.of(context).pop();
     }
+  }
+
+  Future<void> _startPlayerFlow() async {
+    final direct = (widget.directUrl ?? '').trim();
+    if (direct.isNotEmpty) {
+      await _launchCinemaPlayer(url: direct);
+      return;
+    }
+
+    // Seedha CinemaPlayerActivity kholkar uske andar IPTV + Stremio resolve karwayein
+    if (widget.tmdbId > 0) {
+      await _launchCinemaPlayer();
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+      _statusMessage = null;
+    });
+
+    _streamSub = StreamService.fetchStreams(
+      tmdbId: widget.tmdbId,
+      title: widget.title,
+      isTv: widget.isTv,
+      season: widget.season,
+      episode: widget.episode,
+    ).listen(
+      (link) async {
+        if (!mounted) return;
+        final exists = _servers.any((item) => item.url == link.url);
+        if (!exists) {
+          _servers.add(link);
+        }
+        if (!_launchedNative && _servers.isNotEmpty) {
+          final list = _servers.map((s) => s.toPlayerMap()).toList();
+          await _launchCinemaPlayer(
+            url: _servers.first.url,
+            sources: list,
+          );
+        }
+      },
+      onDone: () async {
+        if (!mounted) return;
+        setState(() => _isSearching = false);
+        if (!_launchedNative && _servers.isNotEmpty) {
+          final list = _servers.map((s) => s.toPlayerMap()).toList();
+          await _launchCinemaPlayer(
+            url: _servers.first.url,
+            sources: list,
+          );
+        }
+      },
+      onError: (_) {
+        if (mounted) {
+          setState(() => _isSearching = false);
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
+    _streamSub?.cancel();
     _restorePortraitMode();
     super.dispose();
   }
@@ -124,59 +172,54 @@ class _InternalPlayerScreenState extends State<InternalPlayerScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: Center(
-        child: _hasError
-            ? Padding(
-                padding: const EdgeInsets.all(24),
+        child: _isSearching || _servers.isNotEmpty
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(color: _primeBlue),
+                  const SizedBox(height: 16),
+                  Text(
+                    _displayTitle,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _statusMessage ?? 'Opening Cinema Player...',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                ],
+              )
+            : Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.error_outline_rounded,
-                      color: Color(0xFF00A8E1),
-                      size: 52,
-                    ),
-                    const SizedBox(height: 14),
+                    const Icon(Icons.error_outline, color: _primeBlue, size: 48),
+                    const SizedBox(height: 12),
                     Text(
-                      _errorMessage,
+                      _statusMessage ??
+                          'No stream found. Settings mein Gist URL / TMDB API Key check karein.',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 15,
-                      ),
+                      style: const TextStyle(color: Colors.white70, fontSize: 14),
                     ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF00A8E1),
-                            foregroundColor: Colors.white,
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              _hasError = false;
-                              _errorMessage = '';
-                            });
-                            _launchNativeCinemaPlayer();
-                          },
-                          child: const Text('Retry'),
-                        ),
-                        const SizedBox(width: 12),
-                        OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white38),
-                          ),
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('Back'),
-                        ),
-                      ],
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _primeBlue,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Go Back'),
                     ),
                   ],
                 ),
-              )
-            : const CircularProgressIndicator(color: Color(0xFF00A8E1)),
+              ),
       ),
     );
   }
