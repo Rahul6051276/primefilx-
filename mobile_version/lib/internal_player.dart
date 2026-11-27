@@ -31,8 +31,8 @@ class _InternalPlayerState extends State<InternalPlayer> {
   static const Color _primeBlue = Color(0xFF00A8E1);
   static const MethodChannel _playerChannel = MethodChannel('com.primeflix/player');
 
-  final List<StreamLink> _servers = [];
-  StreamSubscription<StreamLink>? _streamSub;
+  final List _servers = [];
+  StreamSubscription? _streamSub;
   bool _isSearching = true;
   bool _launchedNative = false;
   String? _statusMessage;
@@ -51,7 +51,7 @@ class _InternalPlayerState extends State<InternalPlayer> {
     return widget.title;
   }
 
-  Future<void> _restorePortraitMode() async {
+  Future _restorePortraitMode() async {
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -59,9 +59,9 @@ class _InternalPlayerState extends State<InternalPlayer> {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
-  Future<void> _launchCinemaPlayer({
+  Future _launchCinemaPlayer({
     String url = '',
-    List> sources = const [],
+    List sources = const [],
   }) async {
     if (_launchedNative || !mounted) return;
     _launchedNative = true;
@@ -102,14 +102,13 @@ class _InternalPlayerState extends State<InternalPlayer> {
     }
   }
 
-  Future<void> _startPlayerFlow() async {
+  Future _startPlayerFlow() async {
     final direct = (widget.directUrl ?? '').trim();
     if (direct.isNotEmpty) {
       await _launchCinemaPlayer(url: direct);
       return;
     }
 
-    // Seedha CinemaPlayerActivity kholkar uske andar IPTV + Stremio resolve karwayein
     if (widget.tmdbId > 0) {
       await _launchCinemaPlayer();
       return;
