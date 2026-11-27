@@ -54,8 +54,8 @@ class _MobileStreamModalState extends State<MobileStreamModal> {
   bool _loadingEpisodes = false;
   bool _inMyList = false;
 
-  List> _seasons = [];
-  List> _episodes = [];
+  List _seasons = [];
+  List _episodes = [];
   int _selectedSeason = 1;
 
   @override
