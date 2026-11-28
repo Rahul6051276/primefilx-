@@ -39,6 +39,11 @@ class StreamService {
   static final Map _xtreamVodCache = {};
   static final Map _xtreamSeriesCache = {};
 
+  static const Map<String, String> _iptvHeaders = {
+    'User-Agent': 'IPTVSmartersPro',
+    'Accept': '*/*',
+  };
+
   static Future<int> saveAndConnectGistUrl(String rawUrl) async {
     await AppSettingsService.setGistUrl(rawUrl);
     _cachedProviders = [];
@@ -133,7 +138,12 @@ class StreamService {
           return;
         }
 
-        final imdbId = await TmdbService.getImdbId(tmdbId, isTv);
+        String? imdbId;
+        try {
+          imdbId = await TmdbService.getImdbId(tmdbId, isTv)
+              .timeout(const Duration(seconds: 6));
+        } catch (_) {}
+
         final List<Future> tasks = [];
 
         for (final p in providers) {
@@ -277,13 +287,18 @@ class StreamService {
           vodList = _xtreamVodCache[cacheKey]!;
         } else {
           final uri = Uri.parse(
-            '$host/player_api.php?username=$user&password=$pass&action=get_vod_streams',
+            '$host/player_api.php?username=${Uri.encodeQueryComponent(user)}'
+            '&password=${Uri.encodeQueryComponent(pass)}&action=get_vod_streams',
           );
-          final res = await http.get(uri).timeout(const Duration(seconds: 20));
+          final res = await http
+              .get(uri, headers: _iptvHeaders)
+              .timeout(const Duration(seconds: 35));
           if (res.statusCode != 200) return;
           final decoded = json.decode(res.body);
           vodList = decoded is List ? decoded : [];
-          _xtreamVodCache[cacheKey] = vodList;
+          if (vodList.isNotEmpty) {
+            _xtreamVodCache[cacheKey] = vodList;
+          }
         }
 
         int matched = 0;
@@ -303,9 +318,10 @@ class StreamService {
                 url: '$host/movie/$user/$pass/$streamId.$safeExt',
                 quality: _extractQuality(itemName),
                 isHindi: _isHindi('$itemName ${item['category_name'] ?? ''}'),
+                headers: _iptvHeaders,
               ));
               matched++;
-              if (matched >= 5) break;
+              if (matched >= 6) break;
             }
           }
         }
@@ -315,13 +331,18 @@ class StreamService {
           seriesList = _xtreamSeriesCache[cacheKey]!;
         } else {
           final uri = Uri.parse(
-            '$host/player_api.php?username=$user&password=$pass&action=get_series',
+            '$host/player_api.php?username=${Uri.encodeQueryComponent(user)}'
+            '&password=${Uri.encodeQueryComponent(pass)}&action=get_series',
           );
-          final res = await http.get(uri).timeout(const Duration(seconds: 20));
+          final res = await http
+              .get(uri, headers: _iptvHeaders)
+              .timeout(const Duration(seconds: 35));
           if (res.statusCode != 200) return;
           final decoded = json.decode(res.body);
           seriesList = decoded is List ? decoded : [];
-          _xtreamSeriesCache[cacheKey] = seriesList;
+          if (seriesList.isNotEmpty) {
+            _xtreamSeriesCache[cacheKey] = seriesList;
+          }
         }
 
         for (final item in seriesList) {
@@ -335,9 +356,13 @@ class StreamService {
           if (seriesId == null) continue;
 
           final infoUri = Uri.parse(
-            '$host/player_api.php?username=$user&password=$pass&action=get_series_info&series_id=$seriesId',
+            '$host/player_api.php?username=${Uri.encodeQueryComponent(user)}'
+            '&password=${Uri.encodeQueryComponent(pass)}'
+            '&action=get_series_info&series_id=$seriesId',
           );
-          final infoRes = await http.get(infoUri).timeout(const Duration(seconds: 15));
+          final infoRes = await http
+              .get(infoUri, headers: _iptvHeaders)
+              .timeout(const Duration(seconds: 20));
           if (infoRes.statusCode != 200) continue;
 
           final infoData = json.decode(infoRes.body);
@@ -359,6 +384,7 @@ class StreamService {
                     url: '$host/series/$user/$pass/$epId.$safeExt',
                     quality: _extractQuality(itemName),
                     isHindi: _isHindi('$itemName ${item['category_name'] ?? ''}'),
+                    headers: _iptvHeaders,
                   ));
                   return;
                 }
