@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'app_settings_service.dart';
+import 'stalker_service.dart';
 import 'tmdb_service.dart';
 
 class StreamLink {
@@ -28,6 +29,7 @@ class StreamLink {
       'url': url,
       'quality': quality,
       'isHindi': isHindi,
+      'headers': headers,
     };
   }
 }
@@ -53,33 +55,65 @@ class StreamService {
       return _cachedProviders;
     }
 
+    final List combined = [];
+
+    // 1. Direct Xtream IPTV from App Settings
+    final directXtream = await AppSettingsService.getDirectXtream();
+    if ((directXtream['url'] ?? '').isNotEmpty &&
+        (directXtream['username'] ?? '').isNotEmpty &&
+        (directXtream['password'] ?? '').isNotEmpty) {
+      combined.add(<String, dynamic>{
+        'name': 'Xtream IPTV (Direct)',
+        'type': 'xtream',
+        'xc_host': directXtream['url'],
+        'xc_username': directXtream['username'],
+        'xc_password': directXtream['password'],
+      });
+    }
+
+    // 2. Direct Stalker Portal from App Settings
+    final directStalker = await AppSettingsService.getDirectStalker();
+    if ((directStalker['url'] ?? '').isNotEmpty &&
+        (directStalker['mac'] ?? '').isNotEmpty) {
+      combined.add(<String, dynamic>{
+        'name': 'Stalker Portal (Direct)',
+        'type': 'stalker',
+        'portal_url': directStalker['url'],
+        'mac': directStalker['mac'],
+        'device_id1': directStalker['device_id1'] ?? '',
+        'device_id2': directStalker['device_id2'] ?? '',
+      });
+    }
+
+    // 3. GitHub Gist Providers (Stremio + Xtream + Stalker)
     final gistUrl = await AppSettingsService.getGistUrl();
-    if (gistUrl.isEmpty) return [];
+    if (gistUrl.isNotEmpty) {
+      try {
+        final sep = gistUrl.contains('?') ? '&' : '?';
+        final uri =
+            Uri.parse('$gistUrl${sep}t=${DateTime.now().millisecondsSinceEpoch}');
+        final res = await http.get(uri).timeout(const Duration(seconds: 12));
+        if (res.statusCode == 200) {
+          final decoded = json.decode(res.body);
+          List rawList = [];
+          if (decoded is List) {
+            rawList = decoded;
+          } else if (decoded is Map) {
+            rawList =
+                (decoded['active_providers'] ?? decoded['providers'] ?? []) as List;
+          }
 
-    try {
-      final sep = gistUrl.contains('?') ? '&' : '?';
-      final uri = Uri.parse('$gistUrl${sep}t=${DateTime.now().millisecondsSinceEpoch}');
-      final res = await http.get(uri).timeout(const Duration(seconds: 12));
-      if (res.statusCode == 200) {
-        final decoded = json.decode(res.body);
-        List rawList = [];
-        if (decoded is List) {
-          rawList = decoded;
-        } else if (decoded is Map) {
-          rawList = (decoded['active_providers'] ?? decoded['providers'] ?? []) as List;
-        }
-
-        final parsed = [];
-        for (final e in rawList) {
-          if (e is Map) {
-            parsed.add(Map<String, dynamic>.from(e));
+          for (final e in rawList) {
+            if (e is Map) {
+              combined.add(Map<String, dynamic>.from(e));
+            }
           }
         }
-        _cachedProviders = parsed;
-        return _cachedProviders;
-      }
-    } catch (_) {}
-    return [];
+      } catch (_) {}
+    }
+
+    _cachedProviders = combined;
+    return _cachedProviders;
   }
 
   static Stream<StreamLink> fetchStreams({
@@ -121,6 +155,17 @@ class StreamService {
               provider: provider,
               title: title,
               tmdbId: tmdbId.toString(),
+              isTv: isTv,
+              season: season,
+              episode: episode,
+              onFound: (link) {
+                if (!controller.isClosed) controller.add(link);
+              },
+            ));
+          } else if (type == 'stalker') {
+            tasks.add(_fetchFromStalker(
+              provider: provider,
+              title: title,
               isTv: isTv,
               season: season,
               episode: episode,
@@ -209,11 +254,18 @@ class StreamService {
   }) async {
     try {
       final name = (provider['name'] ?? 'Xtream').toString();
-      String host = (provider['xc_host'] ?? provider['host'] ?? '').toString().trim();
-      final user = (provider['xc_username'] ?? provider['username'] ?? '').toString().trim();
-      final pass = (provider['xc_password'] ?? provider['password'] ?? '').toString().trim();
+      String host = (provider['xc_host'] ?? provider['host'] ?? provider['url'] ?? '')
+          .toString()
+          .trim();
+      final user =
+          (provider['xc_username'] ?? provider['username'] ?? '').toString().trim();
+      final pass =
+          (provider['xc_password'] ?? provider['password'] ?? '').toString().trim();
 
       if (host.isEmpty || user.isEmpty || pass.isEmpty) return;
+      if (!host.startsWith('http://') && !host.startsWith('https://')) {
+        host = 'http://$host';
+      }
       host = host.replaceAll(RegExp(r'/+$'), '');
 
       final cacheKey = '$host|$user';
@@ -313,6 +365,59 @@ class StreamService {
               }
             }
           }
+        }
+      }
+    } catch (_) {}
+  }
+
+  static Future<void> _fetchFromStalker({
+    required Map provider,
+    required String title,
+    required bool isTv,
+    int? season,
+    int? episode,
+    required void Function(StreamLink) onFound,
+  }) async {
+    try {
+      final name = (provider['name'] ?? 'Stalker Portal').toString();
+      final portalUrl =
+          (provider['portal_url'] ?? provider['url'] ?? provider['host'] ?? '')
+              .toString()
+              .trim();
+      final mac = (provider['mac'] ?? '').toString().trim();
+      final dev1 = (provider['device_id1'] ?? provider['device_id'] ?? '')
+          .toString()
+          .trim();
+      final dev2 = (provider['device_id2'] ?? '').toString().trim();
+
+      if (portalUrl.isEmpty || mac.isEmpty) return;
+
+      final items = await StalkerService.searchAndResolve(
+        providerName: name,
+        portalUrl: portalUrl,
+        mac: mac,
+        deviceId1: dev1,
+        deviceId2: dev2,
+        title: title,
+        isTv: isTv,
+        season: season,
+        episode: episode,
+      );
+
+      for (final raw in items) {
+        if (raw is! Map) continue;
+        final streamTitle = (raw['title'] ?? title).toString();
+        final streamUrl = (raw['url'] ?? '').toString();
+        final headers = raw['headers'] is Map ? raw['headers'] as Map : const {};
+        if (streamUrl.isNotEmpty) {
+          onFound(StreamLink(
+            providerName: name,
+            title: streamTitle,
+            url: streamUrl,
+            quality: _extractQuality(streamTitle),
+            isHindi: _isHindi('$name $streamTitle'),
+            headers: headers,
+          ));
         }
       }
     } catch (_) {}
