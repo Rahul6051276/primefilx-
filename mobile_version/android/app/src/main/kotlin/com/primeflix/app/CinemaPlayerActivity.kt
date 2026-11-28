@@ -90,7 +90,11 @@ class CinemaPlayerActivity : Activity() {
         val stalkerEndpoint: String = "",
         val stalkerCmd: String = "",
         val stalkerMediaType: String = "vod",
-        val stalkerEpisode: Int = 0
+        val stalkerEpisode: Int = 0,
+        val stalkerPortalRaw: String = "",
+        val stalkerMac: String = "",
+        val stalkerDev1: String = "",
+        val stalkerDev2: String = ""
     )
 
     private var player: ExoPlayer? = null
@@ -147,6 +151,8 @@ class CinemaPlayerActivity : Activity() {
     private var isTvDevice = false
     private var seekStepSec = 15
     private var seekStepMs = 15_000L
+    private var pendingResumePositionMs = 0L
+    private var retriedCurrentSourceCount = 0
     @Volatile private var isActivityDestroyed = false
     @Volatile private var isResolvingAllSources = false
 
@@ -338,27 +344,98 @@ class CinemaPlayerActivity : Activity() {
         }
     }
 
-    private fun resolveFreshStalkerUrl(src: StreamSourceItem): String {
-        if (src.stalkerCmd.isEmpty() || src.stalkerEndpoint.isEmpty()) {
-            return src.url
+    private fun performStalkerHandshake(
+        rawPortal: String,
+        mac: String,
+        dev1: String,
+        dev2: String
+    ): Pair<String, Map<String, String>>? {
+        if (rawPortal.isEmpty() || mac.isEmpty()) return null
+        var portal = rawPortal.trim()
+        if (!portal.startsWith("http://") && !portal.startsWith("https://")) {
+            portal = "http://$portal"
         }
-        var cleanCmd = src.stalkerCmd.trim()
-        if (cleanCmd.startsWith("ffmpeg ")) {
-            cleanCmd = cleanCmd.substring(7).trim()
+        val base = portal.trimEnd('/')
+        val referer = if (base.endsWith("/c")) "$base/" else "$base/c/"
+
+        val endpoints = mutableListOf<String>()
+        if (base.endsWith(".php")) {
+            endpoints.add(base)
+        } else if (base.endsWith("/c")) {
+            val root = base.substring(0, base.length - 2)
+            endpoints.add("$root/portal.php")
+            endpoints.add("$root/server/load.php")
+            endpoints.add("$root/stalker_portal/server/load.php")
+        } else {
+            endpoints.add("$base/portal.php")
+            endpoints.add("$base/server/load.php")
+            endpoints.add("$base/stalker_portal/server/load.php")
         }
-        if (cleanCmd.startsWith("http://") || cleanCmd.startsWith("https://")) {
-            return cleanCmd
+
+        val cleanMac = mac.trim().uppercase(Locale.ROOT)
+        val cookieParts = mutableListOf(
+            "mac=${URLEncoder.encode(cleanMac, "UTF-8")}",
+            "stb_lang=en",
+            "timezone=Asia%2FKolkata"
+        )
+        if (dev1.isNotEmpty()) cookieParts.add("device_id=${URLEncoder.encode(dev1, "UTF-8")}")
+        if (dev2.isNotEmpty()) cookieParts.add("device_id2=${URLEncoder.encode(dev2, "UTF-8")}")
+        val cookieStr = cookieParts.joinToString("; ")
+        val magUa = "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
+
+        for (ep in endpoints) {
+            val hsStr = httpGetWithHeaders(
+                "$ep?type=stb&action=handshake&token=&prehash=&JsHttpRequest=1-xml",
+                9000,
+                mapOf(
+                    "User-Agent" to magUa,
+                    "X-User-Agent" to "Model: MAG250; Link: WiFi",
+                    "Referer" to referer,
+                    "Cookie" to cookieStr
+                )
+            )
+            if (hsStr.contains("{")) {
+                try {
+                    val cleanJson = hsStr.substring(hsStr.indexOf('{'))
+                    val tok = JSONObject(cleanJson).optJSONObject("js")?.optString("token", "").orEmpty()
+                    if (tok.isNotEmpty()) {
+                        val authHeaders = mapOf(
+                            "User-Agent" to magUa,
+                            "X-User-Agent" to "Model: MAG250; Link: WiFi",
+                            "Referer" to referer,
+                            "Cookie" to cookieStr,
+                            "Authorization" to "Bearer $tok"
+                        )
+                        httpGetWithHeaders(
+                            "$ep?type=stb&action=get_profile&hd=1&device_id=${URLEncoder.encode(dev1, "UTF-8")}&device_id2=${URLEncoder.encode(dev2, "UTF-8")}&JsHttpRequest=1-xml",
+                            6000,
+                            authHeaders
+                        )
+                        return Pair(ep, authHeaders)
+                    }
+                } catch (_: Throwable) {}
+            }
         }
+        return null
+    }
+
+    private fun callStalkerCreateLink(
+        endpoint: String,
+        headers: Map<String, String>,
+        mediaType: String,
+        cleanCmd: String,
+        episode: Int
+    ): String {
         var conn: HttpURLConnection? = null
         return try {
             val encodedCmd = URLEncoder.encode(cleanCmd, "UTF-8")
-            val epParam = if (src.stalkerEpisode > 0) "&series=${src.stalkerEpisode}" else ""
-            val reqUrl = "${src.stalkerEndpoint}?type=${src.stalkerMediaType}&action=create_link&cmd=$encodedCmd$epParam&JsHttpRequest=1-xml"
+            val epParam = if (episode > 0) "&series=$episode" else ""
+            val reqUrl = "$endpoint?type=$mediaType&action=create_link&cmd=$encodedCmd$epParam&JsHttpRequest=1-xml"
             conn = (URL(reqUrl).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 10_000
                 readTimeout = 10_000
                 requestMethod = "GET"
-                src.headers.forEach { (k, v) -> setRequestProperty(k, v) }
+                headers.forEach { (k, v) -> setRequestProperty(k, v) }
             }
             if (conn.responseCode in 200..299) {
                 val body = conn.inputStream.bufferedReader().use { it.readText() }.trim()
@@ -384,38 +461,103 @@ class CinemaPlayerActivity : Activity() {
         }
     }
 
-    private fun resolveAndStartSource(src: StreamSourceItem, isInitial: Boolean) {
+    private fun resolveFreshStalkerUrl(src: StreamSourceItem): Pair<String, Map<String, String>> {
+        if (src.stalkerCmd.isEmpty() || src.stalkerEndpoint.isEmpty()) {
+            return Pair(src.url, src.headers)
+        }
+        var cleanCmd = src.stalkerCmd.trim()
+        if (cleanCmd.startsWith("ffmpeg ")) {
+            cleanCmd = cleanCmd.substring(7).trim()
+        }
+        if (cleanCmd.startsWith("http://") || cleanCmd.startsWith("https://")) {
+            return Pair(cleanCmd, src.headers)
+        }
+
+        // 1. Pehle existing token se try karein
+        val firstTry = callStalkerCreateLink(
+            src.stalkerEndpoint,
+            src.headers,
+            src.stalkerMediaType,
+            cleanCmd,
+            src.stalkerEpisode
+        )
+        if (firstTry.isNotEmpty()) {
+            return Pair(firstTry, src.headers)
+        }
+
+        // 2. Agar token expire ho gaya ho (jaise seek ya late switch par), to naya handshake karke retry karein
+        val portalRaw = src.stalkerPortalRaw.ifEmpty { src.stalkerEndpoint }
+        val freshAuth = performStalkerHandshake(
+            portalRaw,
+            src.stalkerMac,
+            src.stalkerDev1,
+            src.stalkerDev2
+        )
+        if (freshAuth != null) {
+            val secondTry = callStalkerCreateLink(
+                freshAuth.first,
+                freshAuth.second,
+                src.stalkerMediaType,
+                cleanCmd,
+                src.stalkerEpisode
+            )
+            if (secondTry.isNotEmpty()) {
+                return Pair(secondTry, freshAuth.second)
+            }
+        }
+        return Pair("", src.headers)
+    }
+
+    private fun resolveAndStartSource(
+        src: StreamSourceItem,
+        isInitial: Boolean,
+        resumePosMs: Long = 0L
+    ) {
         if (src.stalkerCmd.isNotEmpty() && src.stalkerEndpoint.isNotEmpty()) {
             thread(start = true) {
-                val freshUrl = resolveFreshStalkerUrl(src)
+                val (freshUrl, freshHeaders) = resolveFreshStalkerUrl(src)
                 handler.post {
                     if (!isSafeUi()) return@post
                     if (freshUrl.isEmpty()) {
                         loadingSpinner.visibility = View.GONE
+                        pendingResumePositionMs = 0L
                         if (activeSourceIndex + 1 < streamSources.size) {
+                            retriedCurrentSourceCount = 0
                             switchToStreamSource(activeSourceIndex + 1)
                         } else {
                             showError("Stalker stream link expired or unavailable.")
                         }
-                    } else if (isInitial) {
-                        initExoPlayer(freshUrl, currentMovieTitle, currentUserAgent, currentPreset, src.headers)
+                    } else if (isInitial || player == null) {
+                        initExoPlayer(
+                            freshUrl,
+                            currentMovieTitle,
+                            currentUserAgent,
+                            currentPreset,
+                            freshHeaders,
+                            resumePosMs
+                        )
                     } else {
-                        playResolvedUrlOnExistingPlayer(freshUrl, src)
+                        playResolvedUrlOnExistingPlayer(freshUrl, src, freshHeaders, resumePosMs)
                     }
                 }
             }
         } else {
-            if (isInitial) {
-                initExoPlayer(src.url, currentMovieTitle, currentUserAgent, currentPreset, src.headers)
+            if (isInitial || player == null) {
+                initExoPlayer(src.url, currentMovieTitle, currentUserAgent, currentPreset, src.headers, resumePosMs)
             } else {
-                playResolvedUrlOnExistingPlayer(src.url, src)
+                playResolvedUrlOnExistingPlayer(src.url, src, src.headers, resumePosMs)
             }
         }
     }
 
-    private fun playResolvedUrlOnExistingPlayer(resolvedUrl: String, selected: StreamSourceItem) {
+    private fun playResolvedUrlOnExistingPlayer(
+        resolvedUrl: String,
+        selected: StreamSourceItem,
+        headersToUse: Map<String, String> = selected.headers,
+        resumePosMs: Long = 0L
+    ) {
         val exo = player ?: return
-        applyHeadersToHttpFactory(selected.headers)
+        applyHeadersToHttpFactory(headersToUse)
 
         val lower = resolvedUrl.lowercase(Locale.ROOT)
         val itemBuilder = MediaItem.Builder()
@@ -428,10 +570,16 @@ class CinemaPlayerActivity : Activity() {
         currentMediaItem = itemBuilder.build()
 
         exo.stop()
-        exo.setMediaItem(currentMediaItem)
+        if (resumePosMs > 0L) {
+            exo.setMediaItem(currentMediaItem, resumePosMs)
+        } else {
+            exo.setMediaItem(currentMediaItem)
+        }
         exo.prepare()
         exo.playWhenReady = true
-        showFeedback("Playing: ${selected.server}")
+        if (resumePosMs <= 0L) {
+            showFeedback("Playing: ${selected.server}")
+        }
     }
 
     private fun configureDeviceSpecificHud() {
@@ -478,10 +626,6 @@ class CinemaPlayerActivity : Activity() {
                                 if (v.isNotEmpty()) hdrMap[k] = v
                             }
                         }
-                        val stEndpoint = obj.optString("stalkerEndpoint", "")
-                        val stCmd = obj.optString("stalkerCmd", "")
-                        val stType = obj.optString("stalkerMediaType", "vod")
-                        val stEp = obj.optInt("stalkerEpisode", 0)
                         streamSources.add(
                             StreamSourceItem(
                                 server = srv,
@@ -490,10 +634,10 @@ class CinemaPlayerActivity : Activity() {
                                 isHindi = hin,
                                 isMultiAudio = multi,
                                 headers = hdrMap,
-                                stalkerEndpoint = stEndpoint,
-                                stalkerCmd = stCmd,
-                                stalkerMediaType = stType,
-                                stalkerEpisode = stEp
+                                stalkerEndpoint = obj.optString("stalkerEndpoint", ""),
+                                stalkerCmd = obj.optString("stalkerCmd", ""),
+                                stalkerMediaType = obj.optString("stalkerMediaType", "vod"),
+                                stalkerEpisode = obj.optInt("stalkerEpisode", 0)
                             )
                         )
                     }
@@ -603,95 +747,35 @@ class CinemaPlayerActivity : Activity() {
         found: MutableList<StreamSourceItem>,
         onPartialReady: () -> Unit
     ) {
-        var rawPortal = prov.optString("portal_url", prov.optString("url", prov.optString("host", ""))).trim()
+        val rawPortal = prov.optString("portal_url", prov.optString("url", prov.optString("host", ""))).trim()
         val mac = prov.optString("mac", "").trim().uppercase(Locale.ROOT)
         val dev1 = prov.optString("device_id1", prov.optString("device_id", "")).trim()
         val dev2 = prov.optString("device_id2", "").trim()
-        if (rawPortal.isEmpty() || mac.isEmpty()) return
 
-        if (!rawPortal.startsWith("http://") && !rawPortal.startsWith("https://")) {
-            rawPortal = "http://$rawPortal"
-        }
-        val base = rawPortal.trimEnd('/')
-        val referer = if (base.endsWith("/c")) "$base/" else "$base/c/"
-
-        val endpoints = mutableListOf<String>()
-        if (base.endsWith(".php")) {
-            endpoints.add(base)
-        } else if (base.endsWith("/c")) {
-            val root = base.substring(0, base.length - 2)
-            endpoints.add("$root/portal.php")
-            endpoints.add("$root/server/load.php")
-            endpoints.add("$root/stalker_portal/server/load.php")
-        } else {
-            endpoints.add("$base/portal.php")
-            endpoints.add("$base/server/load.php")
-            endpoints.add("$base/stalker_portal/server/load.php")
-        }
-
-        val cookieParts = mutableListOf(
-            "mac=${URLEncoder.encode(mac, "UTF-8")}",
-            "stb_lang=en",
-            "timezone=Asia%2FKolkata"
-        )
-        if (dev1.isNotEmpty()) cookieParts.add("device_id=${URLEncoder.encode(dev1, "UTF-8")}")
-        if (dev2.isNotEmpty()) cookieParts.add("device_id2=${URLEncoder.encode(dev2, "UTF-8")}")
-        val cookieStr = cookieParts.joinToString("; ")
-        val magUa = "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
-
-        var activeEndpoint = ""
-        var token = ""
-        for (ep in endpoints) {
-            val hsStr = httpGetWithHeaders(
-                "$ep?type=stb&action=handshake&token=&prehash=&JsHttpRequest=1-xml",
-                9000,
-                mapOf(
-                    "User-Agent" to magUa,
-                    "X-User-Agent" to "Model: MAG250; Link: WiFi",
-                    "Referer" to referer,
-                    "Cookie" to cookieStr
-                )
-            )
-            if (hsStr.contains("{")) {
-                try {
-                    val cleanJson = hsStr.substring(hsStr.indexOf('{'))
-                    val tok = JSONObject(cleanJson).optJSONObject("js")?.optString("token", "").orEmpty()
-                    if (tok.isNotEmpty()) {
-                        activeEndpoint = ep
-                        token = tok
-                        break
-                    }
-                } catch (_: Throwable) {}
-            }
-        }
-        if (activeEndpoint.isEmpty() || token.isEmpty()) return
-
-        val authHeaders = mapOf(
-            "User-Agent" to magUa,
-            "X-User-Agent" to "Model: MAG250; Link: WiFi",
-            "Referer" to referer,
-            "Cookie" to cookieStr,
-            "Authorization" to "Bearer $token"
-        )
-
-        httpGetWithHeaders(
-            "$activeEndpoint?type=stb&action=get_profile&hd=1&device_id=${URLEncoder.encode(dev1, "UTF-8")}&device_id2=${URLEncoder.encode(dev2, "UTF-8")}&JsHttpRequest=1-xml",
-            7000,
-            authHeaders
-        )
+        val auth = performStalkerHandshake(rawPortal, mac, dev1, dev2) ?: return
+        val activeEndpoint = auth.first
+        val authHeaders = auth.second
 
         val mediaType = if (isTv) "series" else "vod"
-        val encodedQ = URLEncoder.encode(movieTitle.trim(), "UTF-8")
-        val searchUrls = listOf(
-            "$activeEndpoint?type=$mediaType&action=get_ordered_list&search=$encodedQ&p=1&JsHttpRequest=1-xml",
-            "$activeEndpoint?type=$mediaType&action=get_ordered_list&category=0&search=$encodedQ&p=1&JsHttpRequest=1-xml"
-        )
+        val queries = mutableListOf(movieTitle.trim())
+        if (movieTitle.contains(":")) {
+            queries.add(movieTitle.substringBefore(":").trim())
+        }
 
-        var dataArr: JSONArray? = null
-        for (sUrl in searchUrls) {
-            if (dataArr != null && dataArr.length() > 0) break
-            val resStr = httpGetWithHeaders(sUrl, 12_000, authHeaders)
-            if (resStr.contains("{")) {
+        val collected = mutableListOf<StreamSourceItem>()
+
+        for (q in queries) {
+            if (q.isEmpty() || collected.isNotEmpty()) continue
+            val encodedQ = URLEncoder.encode(q, "UTF-8")
+
+            // Page 1 aur Page 2 dono scan karein taaki Hindi link neeche ho to bhi na chhoote
+            for (page in 1..2) {
+                if (!isSafeUi()) break
+                val sUrl = "$activeEndpoint?type=$mediaType&action=get_ordered_list&search=$encodedQ&p=$page&JsHttpRequest=1-xml"
+                val resStr = httpGetWithHeaders(sUrl, 12_000, authHeaders)
+                if (!resStr.contains("{")) break
+
+                var dataArr: JSONArray? = null
                 try {
                     val cleanJson = resStr.substring(resStr.indexOf('{'))
                     val js = JSONObject(cleanJson).opt("js")
@@ -701,50 +785,59 @@ class CinemaPlayerActivity : Activity() {
                         else -> null
                     }
                 } catch (_: Throwable) {}
+
+                if (dataArr == null || dataArr.length() == 0) break
+
+                for (i in 0 until dataArr.length()) {
+                    if (!isSafeUi()) break
+                    val item = dataArr.optJSONObject(i) ?: continue
+                    val itemName = item.optString("name", item.optString("o_name", ""))
+                    val sClean = cleanText(itemName)
+                    val matched = sClean.length >= 3 && cleanTarget.length >= 3 && (
+                        sClean == cleanTarget ||
+                        sClean.contains(cleanTarget) ||
+                        (sClean.length > 4 && cleanTarget.contains(sClean))
+                    )
+                    if (!matched) continue
+
+                    var cmd = item.optString("cmd", "").trim()
+                    val itemId = item.optString("id", "").trim()
+                    if (isTv && itemId.isNotEmpty()) {
+                        val epCmd = findStalkerEpisodeCmd(activeEndpoint, authHeaders, itemId, season, episode)
+                        if (epCmd.isNotEmpty()) cmd = epCmd
+                    }
+                    if (cmd.isEmpty()) continue
+
+                    val epVal = if (isTv) episode else 0
+                    val placeholderUrl = "$activeEndpoint?stalker_item=$itemId&ep=$epVal&p=$page&i=$i"
+                    collected.add(
+                        StreamSourceItem(
+                            server = provName.ifBlank { "Stalker Portal" },
+                            title = if (isTv) "$itemName • S${season}E${episode}" else itemName,
+                            url = placeholderUrl,
+                            isHindi = isExplicitHindi("$provName $itemName"),
+                            isMultiAudio = false,
+                            headers = authHeaders,
+                            stalkerEndpoint = activeEndpoint,
+                            stalkerCmd = cmd,
+                            stalkerMediaType = mediaType,
+                            stalkerEpisode = epVal,
+                            stalkerPortalRaw = rawPortal,
+                            stalkerMac = mac,
+                            stalkerDev1 = dev1,
+                            stalkerDev2 = dev2
+                        )
+                    )
+                }
             }
         }
-        if (dataArr == null || dataArr.length() == 0) return
 
-        var addedCount = 0
-        for (i in 0 until dataArr.length()) {
-            if (!isSafeUi() || addedCount >= 6) break
-            val item = dataArr.optJSONObject(i) ?: continue
-            val itemName = item.optString("name", item.optString("o_name", ""))
-            val sClean = cleanText(itemName)
-            val matched = sClean.length >= 3 && cleanTarget.length >= 3 && (
-                sClean == cleanTarget ||
-                sClean.contains(cleanTarget) ||
-                (sClean.length > 4 && cleanTarget.contains(sClean))
-            )
-            if (!matched) continue
-
-            var cmd = item.optString("cmd", "").trim()
-            val itemId = item.optString("id", "").trim()
-            if (isTv && itemId.isNotEmpty()) {
-                val epCmd = findStalkerEpisodeCmd(activeEndpoint, authHeaders, itemId, season, episode)
-                if (epCmd.isNotEmpty()) cmd = epCmd
-            }
-            if (cmd.isEmpty()) continue
-
-            val epVal = if (isTv) episode else 0
-            val placeholderUrl = "$activeEndpoint?stalker_item=$itemId&ep=$epVal&idx=$addedCount"
-            found.add(
-                StreamSourceItem(
-                    server = provName.ifBlank { "Stalker Portal" },
-                    title = if (isTv) "$itemName • S${season}E${episode}" else itemName,
-                    url = placeholderUrl,
-                    isHindi = isExplicitHindi("$provName $itemName"),
-                    isMultiAudio = false,
-                    headers = authHeaders,
-                    stalkerEndpoint = activeEndpoint,
-                    stalkerCmd = cmd,
-                    stalkerMediaType = mediaType,
-                    stalkerEpisode = epVal
-                )
-            )
-            addedCount++
+        if (collected.isNotEmpty()) {
+            // Hindi / Multi links ko pehle sort karke top 12 rakhein
+            collected.sortByDescending { if (it.isHindi) 1 else 0 }
+            found.addAll(collected.take(12))
+            onPartialReady()
         }
-        if (addedCount > 0) onPartialReady()
     }
 
     private fun findStalkerEpisodeCmd(
@@ -853,6 +946,7 @@ class CinemaPlayerActivity : Activity() {
 
                     if (streamSources.isNotEmpty() && playbackStarted.compareAndSet(false, true)) {
                         activeSourceIndex = 0
+                        retriedCurrentSourceCount = 0
                         currentActiveUrl = streamSources[0].url
                         setConnectingState(false)
                         loadingSpinner.visibility = View.VISIBLE
@@ -880,7 +974,6 @@ class CinemaPlayerActivity : Activity() {
 
             val providers = mutableListOf<JSONObject>()
 
-            // 1. Direct Xtream & Direct Stalker from App Settings
             if (extraProvidersJson.startsWith("[")) {
                 try {
                     val extraArr = JSONArray(extraProvidersJson)
@@ -890,7 +983,6 @@ class CinemaPlayerActivity : Activity() {
                 } catch (_: Throwable) {}
             }
 
-            // 2. GitHub Gist Providers (Stremio + Xtream + Stalker)
             if (customGistUrl.isNotEmpty()) {
                 try {
                     val sep = if (customGistUrl.contains("?")) "&" else "?"
@@ -1575,7 +1667,9 @@ class CinemaPlayerActivity : Activity() {
                     isSeekingFromUser = false
                     val dur = player?.duration ?: 0L
                     if (dur > 0 && sb != null) {
-                        player?.seekTo((dur * sb.progress) / 1000L)
+                        val targetPos = (dur * sb.progress) / 1000L
+                        pendingResumePositionMs = targetPos
+                        player?.seekTo(targetPos)
                     }
                     scheduleHideHud()
                 }
@@ -1663,8 +1757,13 @@ class CinemaPlayerActivity : Activity() {
         val retryBtn = createHudButton("Retry") {
             errorOverlay.visibility = View.GONE
             loadingSpinner.visibility = View.VISIBLE
+            retriedCurrentSourceCount = 0
             if (activeSourceIndex in streamSources.indices) {
-                resolveAndStartSource(streamSources[activeSourceIndex], isInitial = false)
+                resolveAndStartSource(
+                    streamSources[activeSourceIndex],
+                    isInitial = false,
+                    resumePosMs = pendingResumePositionMs
+                )
             } else {
                 player?.prepare()
                 player?.playWhenReady = true
@@ -1922,12 +2021,16 @@ class CinemaPlayerActivity : Activity() {
                     bottomMargin = dp(10)
                 }
                 setOnClickListener {
+                    retriedCurrentSourceCount = 0
+                    pendingResumePositionMs = 0L
                     switchToStreamSource(index)
                 }
                 setOnKeyListener { _, keyCode, event ->
                     if (event.action == KeyEvent.ACTION_DOWN &&
                         (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)
                     ) {
+                        retriedCurrentSourceCount = 0
+                        pendingResumePositionMs = 0L
                         switchToStreamSource(index)
                         true
                     } else {
@@ -2049,7 +2152,7 @@ class CinemaPlayerActivity : Activity() {
         }
     }
 
-    private fun switchToStreamSource(index: Int) {
+    private fun switchToStreamSource(index: Int, resumePosMs: Long = 0L) {
         if (!isSafeUi() || index !in streamSources.indices) return
         activeSourceIndex = index
         val selected = streamSources[index]
@@ -2059,7 +2162,7 @@ class CinemaPlayerActivity : Activity() {
         loadingSpinner.visibility = View.VISIBLE
         errorOverlay.visibility = View.GONE
 
-        resolveAndStartSource(selected, isInitial = false)
+        resolveAndStartSource(selected, isInitial = false, resumePosMs = resumePosMs)
     }
 
     private fun createSourcesPill(): StateListDrawable {
@@ -2108,7 +2211,8 @@ class CinemaPlayerActivity : Activity() {
         title: String,
         userAgent: String,
         preset: PicturePreset,
-        headers: Map<String, String> = emptyMap()
+        headers: Map<String, String> = emptyMap(),
+        resumePosMs: Long = 0L
     ) {
         if (!isSafeUi()) return
         trackSelector = DefaultTrackSelector(this).apply {
@@ -2182,12 +2286,15 @@ class CinemaPlayerActivity : Activity() {
                 if (!isSafeUi()) return
                 loadingSpinner.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
                 if (state == Player.STATE_READY) {
+                    retriedCurrentSourceCount = 0
+                    pendingResumePositionMs = 0L
                     applyResizeModeToPlayer(resizeModes[resizeIndex])
                     if (loudnessEnhancer == null) {
                         attachLoudnessEnhancer(exo.audioSessionId)
                     }
                 } else if (state == Player.STATE_ENDED && exo.duration <= 0L) {
                     if (activeSourceIndex + 1 < streamSources.size) {
+                        retriedCurrentSourceCount = 0
                         switchToStreamSource(activeSourceIndex + 1)
                     } else {
                         showError("Stream empty or expired. Try switching source.")
@@ -2216,6 +2323,21 @@ class CinemaPlayerActivity : Activity() {
             override fun onPlayerError(error: PlaybackException) {
                 if (!isSafeUi()) return
                 loadingSpinner.visibility = View.GONE
+                val currentSrc = streamSources.getOrNull(activeSourceIndex)
+                val resumePos = pendingResumePositionMs.takeIf { it > 0L }
+                    ?: exo.currentPosition.coerceAtLeast(0L)
+
+                // Stalker seek/token timeout par pehle usi source ka fresh token le kar usi position se resume karein
+                if (currentSrc != null && currentSrc.stalkerCmd.isNotEmpty() && retriedCurrentSourceCount < 1) {
+                    retriedCurrentSourceCount++
+                    pendingResumePositionMs = resumePos
+                    loadingSpinner.visibility = View.VISIBLE
+                    resolveAndStartSource(currentSrc, isInitial = false, resumePosMs = resumePos)
+                    return
+                }
+
+                retriedCurrentSourceCount = 0
+                pendingResumePositionMs = 0L
                 if (activeSourceIndex + 1 < streamSources.size) {
                     switchToStreamSource(activeSourceIndex + 1)
                 } else {
@@ -2226,7 +2348,11 @@ class CinemaPlayerActivity : Activity() {
 
         playerView.player = exo
         applyResizeModeToPlayer(resizeModes[resizeIndex])
-        exo.setMediaItem(currentMediaItem)
+        if (resumePosMs > 0L) {
+            exo.setMediaItem(currentMediaItem, resumePosMs)
+        } else {
+            exo.setMediaItem(currentMediaItem)
+        }
         exo.prepare()
         exo.playWhenReady = true
         player = exo
@@ -2651,6 +2777,7 @@ class CinemaPlayerActivity : Activity() {
         val exo = player ?: return
         val dur = exo.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
         val target = (exo.currentPosition + deltaMs).coerceIn(0L, dur)
+        pendingResumePositionMs = target
         exo.seekTo(target)
         val timeLabel = formatTime(target)
         showFeedback(if (deltaMs < 0) "↺ -${seekStepSec}s  ($timeLabel)" else "+${seekStepSec}s ↻  ($timeLabel)")
