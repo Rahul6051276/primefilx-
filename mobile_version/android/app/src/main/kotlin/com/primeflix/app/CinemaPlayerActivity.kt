@@ -55,6 +55,7 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -64,6 +65,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
@@ -140,6 +142,10 @@ class CinemaPlayerActivity : Activity() {
     private var currentMovieTitle = "PrimeFlix"
     private var currentSearchTitle = "PrimeFlix"
     private var currentPreset = PicturePreset.JUST_PLAYER
+
+    @Volatile private var activeStalkerSource: StreamSourceItem? = null
+    @Volatile private var cachedStalkerPlayUrl: String = ""
+    @Volatile private var cachedStalkerUrlTimeMs: Long = 0L
 
     private val primeBlueHex = "#00A8E1"
     private val primeBlueLightHex = "#38BDF8"
@@ -505,7 +511,6 @@ class CinemaPlayerActivity : Activity() {
             cmdToUse = fetchVodCmdByMovieId(src.stalkerEndpoint, src.headers, src.stalkerItemId)
         }
 
-        // 1. Pehle existing token se try karein
         if (cmdToUse.isNotEmpty()) {
             val firstTry = callStalkerCreateLink(
                 src.stalkerEndpoint,
@@ -519,8 +524,7 @@ class CinemaPlayerActivity : Activity() {
             }
         }
 
-        // 2. Thoda pause dekar fresh handshake + movie_id lookup ke saath retry karein
-        try { Thread.sleep(350) } catch (_: Throwable) {}
+        try { Thread.sleep(250) } catch (_: Throwable) {}
         val portalRaw = src.stalkerPortalRaw.ifEmpty { src.stalkerEndpoint }
         val freshAuth = performStalkerHandshake(
             portalRaw,
@@ -557,6 +561,10 @@ class CinemaPlayerActivity : Activity() {
         resumePosMs: Long = 0L
     ) {
         if (src.stalkerEndpoint.isNotEmpty() && (src.stalkerCmd.isNotEmpty() || src.stalkerItemId.isNotEmpty())) {
+            activeStalkerSource = src
+            cachedStalkerPlayUrl = ""
+            cachedStalkerUrlTimeMs = 0L
+
             thread(start = true) {
                 val (freshUrl, freshHeaders) = resolveFreshStalkerUrl(src)
                 handler.post {
@@ -570,21 +578,33 @@ class CinemaPlayerActivity : Activity() {
                         } else {
                             showError("Selected stream (${src.title}) unavailable on server. Try Retry or Switch Source.")
                         }
-                    } else if (isInitial || player == null) {
-                        initExoPlayer(
-                            freshUrl,
-                            currentMovieTitle,
-                            currentUserAgent,
-                            currentPreset,
-                            freshHeaders,
-                            resumePosMs
-                        )
                     } else {
-                        playResolvedUrlOnExistingPlayer(freshUrl, src, freshHeaders, resumePosMs)
+                        val updatedSrc = src.copy(headers = freshHeaders)
+                        if (activeSourceIndex in streamSources.indices) {
+                            streamSources[activeSourceIndex] = updatedSrc
+                        }
+                        activeStalkerSource = updatedSrc
+                        cachedStalkerPlayUrl = freshUrl
+                        cachedStalkerUrlTimeMs = System.currentTimeMillis()
+
+                        if (isInitial || player == null) {
+                            initExoPlayer(
+                                freshUrl,
+                                currentMovieTitle,
+                                currentUserAgent,
+                                currentPreset,
+                                freshHeaders,
+                                resumePosMs
+                            )
+                        } else {
+                            playResolvedUrlOnExistingPlayer(freshUrl, updatedSrc, freshHeaders, resumePosMs)
+                        }
                     }
                 }
             }
         } else {
+            activeStalkerSource = null
+            cachedStalkerPlayUrl = ""
             if (isInitial || player == null) {
                 initExoPlayer(src.url, currentMovieTitle, currentUserAgent, currentPreset, src.headers, resumePosMs)
             } else {
@@ -2281,7 +2301,32 @@ class CinemaPlayerActivity : Activity() {
         httpDataSourceFactory = httpFactory
         applyHeadersToHttpFactory(headers)
 
-        val dataSourceFactory = DefaultDataSource.Factory(this, httpFactory)
+        // Har seek (Range request) par Stalker ka naya single-use play_token auto-resolve hoga
+        val resolvingFactory = ResolvingDataSource.Factory(httpFactory) { dataSpec ->
+            val stSrc = activeStalkerSource
+            if (stSrc != null && (stSrc.stalkerCmd.isNotEmpty() || stSrc.stalkerItemId.isNotEmpty())) {
+                val now = System.currentTimeMillis()
+                val isSeekRange = dataSpec.position > 0L
+                val isFreshCache = cachedStalkerPlayUrl.isNotEmpty() && (now - cachedStalkerUrlTimeMs) < 1800L
+                val resolved = if (!isSeekRange && isFreshCache) {
+                    cachedStalkerPlayUrl
+                } else {
+                    val (freshUrl, freshHdrs) = resolveFreshStalkerUrl(stSrc)
+                    if (freshUrl.isEmpty()) {
+                        throw IOException("Stalker play_token renewal failed")
+                    }
+                    cachedStalkerPlayUrl = freshUrl
+                    cachedStalkerUrlTimeMs = System.currentTimeMillis()
+                    applyHeadersToHttpFactory(freshHdrs)
+                    freshUrl
+                }
+                dataSpec.withUri(Uri.parse(resolved))
+            } else {
+                dataSpec
+            }
+        }
+
+        val dataSourceFactory = DefaultDataSource.Factory(this, resolvingFactory)
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(15_000, 50_000, 1_500, 3_000)
