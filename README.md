@@ -1,109 +1,111 @@
-# 🎬 Primeflix - Modern Streaming App (Mobile & Android TV)
+# 🎬 PrimeFlix - Modern Streaming App (Mobile & Android TV)
 
 <p align="center">
   <img src="https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter" />
   <img src="https://img.shields.io/badge/Dart-0175C2?style=for-the-badge&logo=dart&logoColor=white" alt="Dart" />
+  <img src="https://img.shields.io/badge/Media3%20ExoPlayer-00A8E1?style=for-the-badge&logo=android&logoColor=white" alt="Media3 ExoPlayer" />
   <img src="https://img.shields.io/badge/Android%20TV-Compatible-green?style=for-the-badge&logo=android" alt="Android TV" />
   <img src="https://img.shields.io/badge/TMDB-API%20Integrated-01d277?style=for-the-badge&logo=themoviedatabase" alt="TMDB" />
-  <img src="https://img.shields.io/badge/Xtream%20IPTV-Supported-blue?style=for-the-badge" alt="Xtream IPTV" />
+  <img src="https://img.shields.io/badge/Xtream%20IPTV-Supported-00A8E1?style=for-the-badge&logo=xtream" alt="Xtream IPTV" />
 </p>
 
-A feature-rich, high-performance streaming application built with **Flutter**, designed seamlessly for both **Mobile Devices** and **Android TV / Google TV** with complete **Remote (D-Pad)** navigation.
+A high-performance **Prime Blue (`#00A8E1`)** streaming application built with **Flutter** and **Kotlin (Media3 / ExoPlayer)**, designed seamlessly for both **Android Mobile** and **Android TV / Google TV** with complete **Remote (D-Pad)** support.
 
 ---
 
 ## 🌟 Key Features
 
 ### 🚀 Dual-Source Streaming Architecture
-- **Xtream Codes IPTV Integration:** Connects directly to Xtream IPTV server accounts with multi-server failover. Automatically prioritizes **Hindi Audio / Hindi Dubbed** audio streams.
-- **Render Cloud API (TMDB-Embed-API):** Parallel scraping fallback powered by your custom backend on Render (`CastleTV`, `VaPlayer`, `Vidlink`, `HDHub4u`, `VegaMovies`).
+- **Xtream Codes IPTV Integration:** Connects directly to Xtream IPTV servers with fast streaming JSON parsing and automatic **Hindi Audio / Hindi Dubbed** priority.
+- **Stremio & Cloud Addons Support:** Parallel multi-server stream resolution (`Cloud Server 1`, `Cloud Server 2`, `HD Streamers`) with live in-player source switching.
+
+### 🍿 Curated Catalogs & 200+ Collections
+- **5-Slide Auto-Sliding Hero Banner:** Showcases the latest releases across **Bollywood**, **South**, **Hollywood**, **Hindi Web Series**, and **Global Web Series** with instant `Watch Now` playback.
+- **5-Tab Bottom Navigation:** Quick access to **Home**, **Movies**, **Web Series**, **My List**, and **Settings**.
+- **All Movies & All Web Series Hubs (200+ Titles):** Unified grids combining **Bollywood, Hollywood, and South** catalogs with **Popular** & **Latest** filters and infinite scroll.
+- **Smart Content Cleaning:** Strictly filters out TV daily soaps, talk shows, and reality TV from Web Series lists so only genuine OTT series appear.
+
+### 🎥 Native Media3 Cinema Player (`CinemaPlayerActivity`)
+- **Prime Blue HUD & Controls:** Custom native landscape player matching the PrimeFlix theme.
+- **200% Audio Boost:** Built-in `LoudnessEnhancer` (`100%` to `200%`) plus vertical swipe volume boost and brightness gestures.
+- **Live Sources Drawer:** Switch between 20+ IPTV and cloud servers mid-playback with Hindi/Multi-Audio & resolution badges (`1080p`, `4K`, `HDR10`).
+- **Advanced Playback Controls:**
+  - `15s` Rewind / Fast-Forward (double-tap or HUD buttons).
+  - Audio Track & Subtitle / Video Quality selector.
+  - Aspect Ratio switcher: `Fit`, `Crop / Zoom` (camera-cutout edge-to-edge), and `Fill`.
+  - Playback Speed (`0.75x` – `2.0x`), Picture Modes (`HW Original`), and Screen Lock.
 
 ### 📺 Cross-Platform (Mobile & Android TV)
-- **Google TV / Android TV Remote Friendly:** Full D-Pad navigation (Up, Down, Left, Right, Center/OK) with interactive scale-up animations and glowing focus rings (`TvFocusable`).
-- **Auto-Responsive Layout:**
-  - **Mobile:** 3-column compact poster grid.
-  - **Android TV:** 6-column native leanback layout.
-- **Landscape Lock-Protection:** Automatically prevents TV displays from shrinking into vertical/portrait mode after video playback.
-
-### 🎥 Custom Internal Video Player
-- **Remote D-Pad Controls:**
-  - `Center / OK`: Toggle Play / Pause.
-  - `Left / Right Arrow`: 30-Second Rewind & Fast-Forward.
-  - `Up / Down Arrow`: Show/Hide on-screen controls.
-  - `Back Button`: Exit video player.
-- **Player Choice Popup:** Choose between **In-App Player** and **External Player (VLC / MX Player)** with single-click remote access.
-- **Advanced Player Features:**
-  - Double-tap seek & on-screen HUD indicator.
-  - Screen Lock functionality with top-layer touch priority.
-  - Aspect ratio switcher: `FIT (16:9)`, `FILL (Stretch)`, and `CROP (Zoom / Notch-fill)`.
-  - Mobile swipe gestures for brightness & volume adjustment.
-
-### 🍿 Curated OTT Catalogs & Filters
-- **Platform Hubs:** Dedicated catalogs for **Netflix, Disney+ Hotstar, Prime Video, ZEE5, and SonyLIV**.
-- **Movies & Web Series Toggle:** Switch instantly between movies and series with remote-friendly tabs.
-- **Smart Content Cleaning:**
-  - 🚫 **No TV Daily Soaps:** Excludes StarPlus, Colors, Zee TV daily serials.
-  - 🚫 **No Anime Pollution:** Strictly filters out Japanese animation and cartoons from platform lists.
-  - ⭐ **Top Originals Only:** Curated directly from official OTT production networks.
-
-### ⚡ Blazing Fast Launch & Local Caching
-- **Instant Launch:** Caches catalogs locally with `SharedPreferences` to boot the home screen in **0.05 seconds** (no blank screens or grey placeholders).
-- **Parallel Network Requests:** Utilizes concurrent `Future.wait` for lightning-fast catalog updates.
+- **Android TV / Google TV Remote Friendly:** Full D-Pad navigation (`Up`, `Down`, `Left`, `Right`, `Center/OK`, `Back`) with landscape orientation protection.
+- **Instant Local Caching:** Saves watchlist (`My List`), TMDB key, and Gist URL locally via `SharedPreferences`.
 
 ---
 
-## ⚙️ Remote Gist Configuration Format
+## 📂 Project Structure
 
-App credentials and server links are dynamically managed via **GitHub Gist**. Update your IPTV or backend scrapers without releasing a new APK:
-
+```text
 mobile_version/
 ├── lib/
-│   ├── internal_player.dart           # Custom Netflix-style player (TV Remote & gestures)
+│   ├── internal_player.dart                 # Flutter-to-Native CinemaPlayer bridge
 │   ├── screens/
-│   │   ├── mobile_home_screen.dart    # Home Screen, Carousel, Horizontal Rows & TV Grids
-│   │   ├── my_list_screen.dart        # Saved Bookmarks / Watchlist
-│   │   └── search_screen.dart         # Instant TMDB search
+│   │   ├── mobile_home_screen.dart          # 5-Slide Banner, Home Rows & 5-Tab Navigation
+│   │   ├── catalog_collection_screen.dart   # 200+ All Movies & Web Series (Popular/Latest)
+│   │   ├── my_list_screen.dart              # Saved Watchlist / Bookmarks
+│   │   ├── search_screen.dart               # Instant TMDB Multi-Search
+│   │   └── settings_screen.dart             # Gist URL, TMDB Key & Player Preferences
 │   ├── services/
-│   │   ├── catalog_service.dart       # TMDB result parsers
-│   │   ├── stream_service.dart        # Render cloud embed API connector
-│   │   └── tmdb_service.dart          # TMDB discover queries & configuration
+│   │   ├── app_settings_service.dart        # Local configuration & preferences storage
+│   │   ├── catalog_service.dart             # Catalog parsers
+│   │   ├── native_cinema_player.dart        # Native MethodChannel wrapper
+│   │   ├── stream_service.dart              # IPTV & Stremio provider loader
+│   │   ├── tmdb_service.dart                # TMDB discover & metadata queries
+│   │   └── xtream_service.dart              # Xtream IPTV VOD & Series resolver
 │   └── widgets/
-│       └── mobile_stream_modal.dart   # Quality Selector Sheet & Player Choice Dialog
+│       └── mobile_stream_modal.dart         # Details, Episode Picker & Watch Now Modal
 ├── android/
 │   └── app/
-│       ├── build.gradle               # compileSdkVersion 34 configuration
-│       └── src/main/AndroidManifest.xml # Android TV Leanback & Cleartext HTTP permissions
-└── pubspec.yaml                       # Dependencies & packages
+│       ├── build.gradle                     # Android SDK & Media3 dependencies
+│       └── src/main/
+│           ├── AndroidManifest.xml          # Landscape CinemaPlayer & Cleartext HTTP config
+│           └── kotlin/com/primeflix/app/
+│               ├── MainActivity.kt          # com.primeflix/player MethodChannel handler
+│               └── CinemaPlayerActivity.kt  # Native Media3/ExoPlayer Cinema Player
+└── pubspec.yaml                             # Flutter dependencies
+```
 
-git clone https://github.com/Rahul6051276/primefilx-.git
+---
+
+## 🛠️ Build Instructions
+
+```bash
+git clone [https://github.com/Rahul6051276/primefilx-.git](https://github.com/Rahul6051276/primefilx-.git)
 cd primefilx-/mobile_version
 flutter clean
 flutter pub get
-flutter build apk --releas
+flutter build apk --release
+```
 
-# Primeflix - Streaming App
+---
 
-## GitHub Gist Server Configuration (`TMDB API`)
+## ⚙️ Remote GitHub Gist Configuration (Example Format)
 
-Primeflix app mein servers (Stremio Addons aur Xtream IPTV) load karne ke liye GitHub Gist (`5b0a18b2cf69a99d1d3e06629fcbc70a`) ki `TMDB API` file mein niche diya gaya JSON structure hi use karna hai.
-
-### Exact JSON Format (Copy & Paste)
+Server providers (Cloud Addons and Xtream IPTV accounts) are dynamically loaded from your private GitHub Gist Raw URL configured inside the **Settings** tab. Use the following sample structure:
 
 ```json
 {
   "active_providers": [
     {
-      "name": "PenguPlay (VegaMovies & VidLink)",
+      "name": "Cloud Stream Server (Example)",
       "type": "stremio",
-      "url": "[https://pengu.uk/%7B%22auth_token%22%3A%222UJkzYcs1DAE-kESrDyxt9r87LQZRf7NhRGi6lEC4Oc%22%7D/manifest.json](https://pengu.uk/%7B%22auth_token%22%3A%222UJkzYcs1DAE-kESrDyxt9r87LQZRf7NhRGi6lEC4Oc%22%7D/manifest.json)"
+      "url": "[https://your-cloud-addon.example.com/manifest.json](https://your-cloud-addon.example.com/manifest.json)"
     },
     {
-      "name": "Livebox Pro",
+      "name": "IPTV Server (Example)",
       "type": "xtream",
-      "xc_host": "[http://livebox.pro](http://livebox.pro)",
+      "xc_host": "[http://your-iptv-host.example.com](http://your-iptv-host.example.com)",
       "xc_username": "YOUR_USERNAME",
       "xc_password": "YOUR_PASSWORD"
     }
   ]
 }
-
+```
