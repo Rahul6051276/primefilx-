@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'services/app_settings_service.dart';
-import 'services/stream_service.dart';
 
 class InternalPlayer extends StatefulWidget {
   final int tmdbId;
@@ -28,17 +27,11 @@ class InternalPlayer extends StatefulWidget {
 }
 
 class _InternalPlayerState extends State<InternalPlayer> {
-  static const Color _primeBlue = Color(0xFF00A8E1);
   static const MethodChannel _playerChannel =
       MethodChannel('com.primeflix/player');
 
-  final List _servers = [];
-  StreamSubscription? _streamSub;
-  Timer? _launchDelayTimer;
-  Timer? _maxWaitTimer;
-  bool _isSearching = true;
   bool _launchedNative = false;
-  String? _statusMessage;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -68,20 +61,47 @@ class _InternalPlayerState extends State<InternalPlayer> {
   }) async {
     if (_launchedNative || !mounted) return;
     _launchedNative = true;
-    _launchDelayTimer?.cancel();
-    _maxWaitTimer?.cancel();
 
     final gistUrl = await AppSettingsService.getGistUrl();
     final tmdbKey = await AppSettingsService.getTmdbApiKey();
     final seekSeconds = await AppSettingsService.getSeekSeconds();
+    final directXtream = await AppSettingsService.getDirectXtream();
+    final directStalker = await AppSettingsService.getDirectStalker();
+
+    final List extraProviders = [];
+    if ((directXtream['url'] ?? '').isNotEmpty &&
+        (directXtream['username'] ?? '').isNotEmpty &&
+        (directXtream['password'] ?? '').isNotEmpty) {
+      extraProviders.add({
+        'name': 'Xtream IPTV (Direct)',
+        'type': 'xtream',
+        'xc_host': directXtream['url'],
+        'xc_username': directXtream['username'],
+        'xc_password': directXtream['password'],
+      });
+    }
+    if ((directStalker['url'] ?? '').isNotEmpty &&
+        (directStalker['mac'] ?? '').isNotEmpty) {
+      extraProviders.add({
+        'name': 'Stalker Portal (Direct)',
+        'type': 'stalker',
+        'portal_url': directStalker['url'],
+        'mac': directStalker['mac'],
+        'device_id1': directStalker['device_id1'] ?? '',
+        'device_id2': directStalker['device_id2'] ?? '',
+      });
+    }
 
     try {
       await _playerChannel.invokeMethod('playVideo', {
         'url': url,
         'title': _displayTitle,
+        'rawTitle': widget.title,
         'tmdbId': widget.tmdbId > 0 ? widget.tmdbId.toString() : '',
         'tmdbKey': tmdbKey,
         'gistUrl': gistUrl,
+        'extraProvidersJson':
+            extraProviders.isNotEmpty ? jsonEncode(extraProviders) : '',
         'isTv': widget.isTv,
         'season': widget.season ?? 1,
         'episode': widget.episode ?? 1,
@@ -96,33 +116,13 @@ class _InternalPlayerState extends State<InternalPlayer> {
       if (!mounted) return;
       setState(() {
         _launchedNative = false;
-        _isSearching = false;
-        _statusMessage = 'Native player launch error: $e';
+        _errorMessage = 'Player launch error: $e';
       });
       return;
     }
 
     if (mounted && Navigator.canPop(context)) {
       Navigator.of(context).pop();
-    }
-  }
-
-  void _openWithCollectedServers() {
-    if (_launchedNative || !mounted) return;
-    if (_servers.isNotEmpty) {
-      // Hindi/Dubbed streams ko upar rakhein
-      _servers.sort((a, b) {
-        final aHi = (a.isHindi == true) ? 0 : 1;
-        final bHi = (b.isHindi == true) ? 0 : 1;
-        return aHi.compareTo(bHi);
-      });
-      final list = _servers.map((s) => s.toPlayerMap()).toList();
-      _launchCinemaPlayer(
-        url: _servers.first.url,
-        sources: list,
-      );
-    } else {
-      _launchCinemaPlayer();
     }
   }
 
@@ -133,116 +133,54 @@ class _InternalPlayerState extends State<InternalPlayer> {
       return;
     }
 
-    setState(() {
-      _isSearching = true;
-      _statusMessage = 'Fetching streams from Stremio, Xtream & Stalker...';
-    });
+    if (widget.tmdbId > 0) {
+      await _launchCinemaPlayer();
+      return;
+    }
 
-    // Maximum 16 second wait taaki player hang na ho
-    _maxWaitTimer = Timer(const Duration(seconds: 16), () {
-      _openWithCollectedServers();
-    });
-
-    _streamSub = StreamService.fetchStreams(
-      tmdbId: widget.tmdbId,
-      title: widget.title,
-      isTv: widget.isTv,
-      season: widget.season,
-      episode: widget.episode,
-    ).listen(
-      (link) {
-        if (!mounted) return;
-        final exists = _servers.any((item) => item.url == link.url);
-        if (!exists) {
-          setState(() {
-            _servers.add(link);
-            _statusMessage =
-                'Found ${_servers.length} sources (${link.providerName})...';
-          });
-        }
-
-        // Pehla link milne ke 1.5s baad player kholein taaki baaki servers bhi list mein jud jayein
-        if (!_launchedNative && _launchDelayTimer == null) {
-          _launchDelayTimer = Timer(const Duration(milliseconds: 1500), () {
-            _openWithCollectedServers();
-          });
-        }
-      },
-      onDone: () {
-        if (!mounted) return;
-        setState(() => _isSearching = false);
-        _openWithCollectedServers();
-      },
-      onError: (_) {
-        if (!mounted) return;
-        setState(() => _isSearching = false);
-        _openWithCollectedServers();
-      },
-    );
+    if (mounted) {
+      setState(() {
+        _errorMessage = 'Invalid title or stream URL.';
+      });
+    }
   }
 
   @override
   void dispose() {
-    _launchDelayTimer?.cancel();
-    _maxWaitTimer?.cancel();
-    _streamSub?.cancel();
     _restorePortraitMode();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_errorMessage == null) {
+      return const Scaffold(backgroundColor: Colors.black);
+    }
     return Scaffold(
       backgroundColor: Colors.black,
       body: Center(
-        child: _isSearching || _servers.isNotEmpty
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(color: _primeBlue),
-                  const SizedBox(height: 16),
-                  Text(
-                    _displayTitle,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _statusMessage ?? 'Opening Cinema Player...',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white70, fontSize: 13),
-                  ),
-                ],
-              )
-            : Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.error_outline, color: _primeBlue, size: 48),
-                    const SizedBox(height: 12),
-                    Text(
-                      _statusMessage ??
-                          'No stream found. Settings mein Gist URL / Xtream / Stalker check karein.',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white70, fontSize: 14),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _primeBlue,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Go Back'),
-                    ),
-                  ],
-                ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
               ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00A8E1),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Go Back'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

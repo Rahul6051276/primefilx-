@@ -133,6 +133,7 @@ class CinemaPlayerActivity : Activity() {
     private var currentActiveUrl = ""
     private var currentUserAgent = "PrimeFlix/1.0"
     private var currentMovieTitle = "PrimeFlix"
+    private var currentSearchTitle = "PrimeFlix"
     private var currentPreset = PicturePreset.JUST_PLAYER
 
     private val primeBlueHex = "#00A8E1"
@@ -280,10 +281,13 @@ class CinemaPlayerActivity : Activity() {
 
         val rawUrl = intent.getStringExtra("url")?.trim().orEmpty()
         currentMovieTitle = intent.getStringExtra("title")?.trim().orEmpty().ifEmpty { "PrimeFlix" }
+        currentSearchTitle = intent.getStringExtra("rawTitle")?.trim().orEmpty()
+            .ifEmpty { currentMovieTitle.substringBefore(" • S").trim() }
         currentUserAgent = intent.getStringExtra("userAgent")?.trim().orEmpty().ifEmpty { "PrimeFlix/1.0" }
         val tmdbId = intent.getStringExtra("tmdbId")?.trim().orEmpty()
         val tmdbKey = intent.getStringExtra("tmdbKey")?.trim().orEmpty()
         val customGistUrl = intent.getStringExtra("gistUrl")?.trim().orEmpty()
+        val extraProvidersJson = intent.getStringExtra("extraProvidersJson")?.trim().orEmpty()
         val isTv = intent.getBooleanExtra("isTv", false)
         val season = intent.getIntExtra("season", 1)
         val episode = intent.getIntExtra("episode", 1)
@@ -319,7 +323,16 @@ class CinemaPlayerActivity : Activity() {
         } else if (tmdbId.isNotEmpty()) {
             loadingSpinner.visibility = View.GONE
             setConnectingState(true)
-            resolveStreamsInsidePlayer(tmdbId, tmdbKey, customGistUrl, currentMovieTitle, isTv, season, episode)
+            resolveStreamsInsidePlayer(
+                tmdbId = tmdbId,
+                tmdbKey = tmdbKey,
+                customGistUrl = customGistUrl,
+                extraProvidersJson = extraProvidersJson,
+                movieTitle = currentSearchTitle,
+                isTv = isTv,
+                season = season,
+                episode = episode
+            )
         } else {
             showError("Stream URL खाली है।")
         }
@@ -579,10 +592,221 @@ class CinemaPlayerActivity : Activity() {
         )
     }
 
+    private fun searchStalkerProvider(
+        prov: JSONObject,
+        provName: String,
+        movieTitle: String,
+        cleanTarget: String,
+        isTv: Boolean,
+        season: Int,
+        episode: Int,
+        found: MutableList<StreamSourceItem>,
+        onPartialReady: () -> Unit
+    ) {
+        var rawPortal = prov.optString("portal_url", prov.optString("url", prov.optString("host", ""))).trim()
+        val mac = prov.optString("mac", "").trim().uppercase(Locale.ROOT)
+        val dev1 = prov.optString("device_id1", prov.optString("device_id", "")).trim()
+        val dev2 = prov.optString("device_id2", "").trim()
+        if (rawPortal.isEmpty() || mac.isEmpty()) return
+
+        if (!rawPortal.startsWith("http://") && !rawPortal.startsWith("https://")) {
+            rawPortal = "http://$rawPortal"
+        }
+        val base = rawPortal.trimEnd('/')
+        val referer = if (base.endsWith("/c")) "$base/" else "$base/c/"
+
+        val endpoints = mutableListOf<String>()
+        if (base.endsWith(".php")) {
+            endpoints.add(base)
+        } else if (base.endsWith("/c")) {
+            val root = base.substring(0, base.length - 2)
+            endpoints.add("$root/portal.php")
+            endpoints.add("$root/server/load.php")
+            endpoints.add("$root/stalker_portal/server/load.php")
+        } else {
+            endpoints.add("$base/portal.php")
+            endpoints.add("$base/server/load.php")
+            endpoints.add("$base/stalker_portal/server/load.php")
+        }
+
+        val cookieParts = mutableListOf(
+            "mac=${URLEncoder.encode(mac, "UTF-8")}",
+            "stb_lang=en",
+            "timezone=Asia%2FKolkata"
+        )
+        if (dev1.isNotEmpty()) cookieParts.add("device_id=${URLEncoder.encode(dev1, "UTF-8")}")
+        if (dev2.isNotEmpty()) cookieParts.add("device_id2=${URLEncoder.encode(dev2, "UTF-8")}")
+        val cookieStr = cookieParts.joinToString("; ")
+        val magUa = "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
+
+        var activeEndpoint = ""
+        var token = ""
+        for (ep in endpoints) {
+            val hsStr = httpGetWithHeaders(
+                "$ep?type=stb&action=handshake&token=&prehash=&JsHttpRequest=1-xml",
+                9000,
+                mapOf(
+                    "User-Agent" to magUa,
+                    "X-User-Agent" to "Model: MAG250; Link: WiFi",
+                    "Referer" to referer,
+                    "Cookie" to cookieStr
+                )
+            )
+            if (hsStr.contains("{")) {
+                try {
+                    val cleanJson = hsStr.substring(hsStr.indexOf('{'))
+                    val tok = JSONObject(cleanJson).optJSONObject("js")?.optString("token", "").orEmpty()
+                    if (tok.isNotEmpty()) {
+                        activeEndpoint = ep
+                        token = tok
+                        break
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+        if (activeEndpoint.isEmpty() || token.isEmpty()) return
+
+        val authHeaders = mapOf(
+            "User-Agent" to magUa,
+            "X-User-Agent" to "Model: MAG250; Link: WiFi",
+            "Referer" to referer,
+            "Cookie" to cookieStr,
+            "Authorization" to "Bearer $token"
+        )
+
+        httpGetWithHeaders(
+            "$activeEndpoint?type=stb&action=get_profile&hd=1&device_id=${URLEncoder.encode(dev1, "UTF-8")}&device_id2=${URLEncoder.encode(dev2, "UTF-8")}&JsHttpRequest=1-xml",
+            7000,
+            authHeaders
+        )
+
+        val mediaType = if (isTv) "series" else "vod"
+        val encodedQ = URLEncoder.encode(movieTitle.trim(), "UTF-8")
+        val searchUrls = listOf(
+            "$activeEndpoint?type=$mediaType&action=get_ordered_list&search=$encodedQ&p=1&JsHttpRequest=1-xml",
+            "$activeEndpoint?type=$mediaType&action=get_ordered_list&category=0&search=$encodedQ&p=1&JsHttpRequest=1-xml"
+        )
+
+        var dataArr: JSONArray? = null
+        for (sUrl in searchUrls) {
+            if (dataArr != null && dataArr.length() > 0) break
+            val resStr = httpGetWithHeaders(sUrl, 12_000, authHeaders)
+            if (resStr.contains("{")) {
+                try {
+                    val cleanJson = resStr.substring(resStr.indexOf('{'))
+                    val js = JSONObject(cleanJson).opt("js")
+                    dataArr = when (js) {
+                        is JSONObject -> js.optJSONArray("data")
+                        is JSONArray -> js
+                        else -> null
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+        if (dataArr == null || dataArr.length() == 0) return
+
+        var addedCount = 0
+        for (i in 0 until dataArr.length()) {
+            if (!isSafeUi() || addedCount >= 6) break
+            val item = dataArr.optJSONObject(i) ?: continue
+            val itemName = item.optString("name", item.optString("o_name", ""))
+            val sClean = cleanText(itemName)
+            val matched = sClean.length >= 3 && cleanTarget.length >= 3 && (
+                sClean == cleanTarget ||
+                sClean.contains(cleanTarget) ||
+                (sClean.length > 4 && cleanTarget.contains(sClean))
+            )
+            if (!matched) continue
+
+            var cmd = item.optString("cmd", "").trim()
+            val itemId = item.optString("id", "").trim()
+            if (isTv && itemId.isNotEmpty()) {
+                val epCmd = findStalkerEpisodeCmd(activeEndpoint, authHeaders, itemId, season, episode)
+                if (epCmd.isNotEmpty()) cmd = epCmd
+            }
+            if (cmd.isEmpty()) continue
+
+            val epVal = if (isTv) episode else 0
+            val placeholderUrl = "$activeEndpoint?stalker_item=$itemId&ep=$epVal&idx=$addedCount"
+            found.add(
+                StreamSourceItem(
+                    server = provName.ifBlank { "Stalker Portal" },
+                    title = if (isTv) "$itemName • S${season}E${episode}" else itemName,
+                    url = placeholderUrl,
+                    isHindi = isExplicitHindi("$provName $itemName"),
+                    isMultiAudio = false,
+                    headers = authHeaders,
+                    stalkerEndpoint = activeEndpoint,
+                    stalkerCmd = cmd,
+                    stalkerMediaType = mediaType,
+                    stalkerEpisode = epVal
+                )
+            )
+            addedCount++
+        }
+        if (addedCount > 0) onPartialReady()
+    }
+
+    private fun findStalkerEpisodeCmd(
+        endpoint: String,
+        headers: Map<String, String>,
+        seriesId: String,
+        season: Int,
+        episode: Int
+    ): String {
+        try {
+            val sStr = httpGetWithHeaders(
+                "$endpoint?type=series&action=get_ordered_list&movie_id=${URLEncoder.encode(seriesId, "UTF-8")}&p=1&JsHttpRequest=1-xml",
+                10_000,
+                headers
+            )
+            if (!sStr.contains("{")) return ""
+            val js = JSONObject(sStr.substring(sStr.indexOf('{'))).opt("js")
+            val seasons = if (js is JSONObject) js.optJSONArray("data") else if (js is JSONArray) js else null
+            if (seasons == null) return ""
+
+            for (i in 0 until seasons.length()) {
+                val sObj = seasons.optJSONObject(i) ?: continue
+                val sName = sObj.optString("name", "").lowercase(Locale.ROOT)
+                val sNum = sObj.optInt("season_number", -1).takeIf { it > 0 }
+                    ?: Regex("\\d+").find(sName)?.value?.toIntOrNull()
+                if (sNum == season || seasons.length() == 1) {
+                    val seasonId = sObj.optString("id", "")
+                    val sCmd = sObj.optString("cmd", "")
+                    if (seasonId.isNotEmpty()) {
+                        val epStr = httpGetWithHeaders(
+                            "$endpoint?type=series&action=get_ordered_list&movie_id=${URLEncoder.encode(seriesId, "UTF-8")}&season_id=${URLEncoder.encode(seasonId, "UTF-8")}&p=1&JsHttpRequest=1-xml",
+                            10_000,
+                            headers
+                        )
+                        if (epStr.contains("{")) {
+                            val epJs = JSONObject(epStr.substring(epStr.indexOf('{'))).opt("js")
+                            val eps = if (epJs is JSONObject) epJs.optJSONArray("data") else if (epJs is JSONArray) epJs else null
+                            if (eps != null) {
+                                for (j in 0 until eps.length()) {
+                                    val epObj = eps.optJSONObject(j) ?: continue
+                                    val eNum = epObj.optInt("episode_number", -1).takeIf { it > 0 }
+                                        ?: Regex("\\d+").find(epObj.optString("name", ""))?.value?.toIntOrNull()
+                                    if (eNum == episode) {
+                                        val epCmd = epObj.optString("cmd", "").trim()
+                                        if (epCmd.isNotEmpty()) return epCmd
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (sCmd.isNotEmpty()) return sCmd
+                }
+            }
+        } catch (_: Throwable) {}
+        return ""
+    }
+
     private fun resolveStreamsInsidePlayer(
         tmdbId: String,
         tmdbKey: String,
         customGistUrl: String,
+        extraProvidersJson: String,
         movieTitle: String,
         isTv: Boolean,
         season: Int,
@@ -655,6 +879,18 @@ class CinemaPlayerActivity : Activity() {
             }
 
             val providers = mutableListOf<JSONObject>()
+
+            // 1. Direct Xtream & Direct Stalker from App Settings
+            if (extraProvidersJson.startsWith("[")) {
+                try {
+                    val extraArr = JSONArray(extraProvidersJson)
+                    for (i in 0 until extraArr.length()) {
+                        providers.add(extraArr.getJSONObject(i))
+                    }
+                } catch (_: Throwable) {}
+            }
+
+            // 2. GitHub Gist Providers (Stremio + Xtream + Stalker)
             if (customGistUrl.isNotEmpty()) {
                 try {
                     val sep = if (customGistUrl.contains("?")) "&" else "?"
@@ -683,11 +919,26 @@ class CinemaPlayerActivity : Activity() {
                 thread(start = true) {
                     try {
                         if (!isSafeUi()) return@thread
-                        val type = prov.optString("type", "")
+                        val type = prov.optString("type", "").lowercase(Locale.ROOT)
                         val provName = prov.optString("name", "Server")
 
-                        if (type == "xtream") {
-                            val host = prov.optString("xc_host", prov.optString("host", "")).trimEnd('/')
+                        if (type == "stalker") {
+                            searchStalkerProvider(
+                                prov = prov,
+                                provName = provName,
+                                movieTitle = movieTitle,
+                                cleanTarget = cleanTarget,
+                                isTv = isTv,
+                                season = season,
+                                episode = episode,
+                                found = found,
+                                onPartialReady = { syncSourcesToUi(isFinal = false) }
+                            )
+                        } else if (type == "xtream") {
+                            var host = prov.optString("xc_host", prov.optString("host", prov.optString("url", ""))).trimEnd('/')
+                            if (host.isNotEmpty() && !host.startsWith("http://") && !host.startsWith("https://")) {
+                                host = "http://$host"
+                            }
                             val user = prov.optString("xc_username", prov.optString("username", ""))
                             val pass = prov.optString("xc_password", prov.optString("password", ""))
 
@@ -722,7 +973,8 @@ class CinemaPlayerActivity : Activity() {
                                                                 title = if (bestSeries.isHindi) "$movieTitle (Hindi) S$season:E$episode" else "$movieTitle S$season:E$episode",
                                                                 url = "$host/series/$user/$pass/$eid.$ext",
                                                                 isHindi = bestSeries.isHindi,
-                                                                isMultiAudio = false
+                                                                isMultiAudio = false,
+                                                                headers = mapOf("User-Agent" to "IPTVSmartersPro")
                                                             )
                                                         )
                                                         syncSourcesToUi(isFinal = false)
@@ -747,7 +999,8 @@ class CinemaPlayerActivity : Activity() {
                                                 title = bestMovie.name.ifBlank { movieTitle },
                                                 url = "$host/movie/$user/$pass/${bestMovie.id}.${bestMovie.ext}",
                                                 isHindi = bestMovie.isHindi,
-                                                isMultiAudio = false
+                                                isMultiAudio = false,
+                                                headers = mapOf("User-Agent" to "IPTVSmartersPro")
                                             )
                                         )
                                     }
@@ -950,13 +1203,17 @@ class CinemaPlayerActivity : Activity() {
     }
 
     private fun httpGet(urlStr: String, timeoutMs: Int, userAgent: String = "Mozilla/5.0"): String {
+        return httpGetWithHeaders(urlStr, timeoutMs, mapOf("User-Agent" to userAgent))
+    }
+
+    private fun httpGetWithHeaders(urlStr: String, timeoutMs: Int, headers: Map<String, String>): String {
         var conn: HttpURLConnection? = null
         return try {
             conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
                 connectTimeout = timeoutMs
                 readTimeout = timeoutMs
                 requestMethod = "GET"
-                setRequestProperty("User-Agent", userAgent)
+                headers.forEach { (k, v) -> setRequestProperty(k, v) }
             }
             if (conn.responseCode in 200..299) {
                 conn.inputStream.bufferedReader().use { it.readText() }

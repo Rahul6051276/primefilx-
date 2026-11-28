@@ -18,9 +18,11 @@ class MainActivity : FlutterActivity() {
                 if (call.method == "playVideo") {
                     val url = call.argument<String>("url") ?: ""
                     val title = call.argument<String>("title") ?: "PrimeFlix"
+                    val rawTitle = call.argument<String>("rawTitle") ?: title
                     val tmdbId = call.argument<String>("tmdbId") ?: ""
                     val tmdbKey = call.argument<String>("tmdbKey") ?: ""
                     val gistUrl = call.argument<String>("gistUrl") ?: ""
+                    val extraProvidersJson = call.argument<String>("extraProvidersJson") ?: ""
                     val isTv = call.argument<Boolean>("isTv") ?: false
                     val season = call.argument<Int>("season") ?: 1
                     val episode = call.argument<Int>("episode") ?: 1
@@ -47,9 +49,11 @@ class MainActivity : FlutterActivity() {
                         val intent = Intent(this, CinemaPlayerActivity::class.java).apply {
                             putExtra("url", url)
                             putExtra("title", title)
+                            putExtra("rawTitle", rawTitle)
                             putExtra("tmdbId", tmdbId)
                             putExtra("tmdbKey", tmdbKey)
                             putExtra("gistUrl", gistUrl)
+                            putExtra("extraProvidersJson", extraProvidersJson)
                             putExtra("isTv", isTv)
                             putExtra("season", season)
                             putExtra("episode", episode)
