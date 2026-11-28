@@ -25,42 +25,42 @@ class AppSettingsService {
     defaultValue: '',
   );
 
-  static Future<String> getGistUrl() async {
+  static Future getGistUrl() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = (prefs.getString(_gistUrlKey) ?? '').trim();
     if (saved.isNotEmpty) return saved;
     return _envGistUrl.trim();
   }
 
-  static Future<void> setGistUrl(String url) async {
+  static Future setGistUrl(String url) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_gistUrlKey, url.trim());
   }
 
-  static Future<String> getTmdbApiKey() async {
+  static Future getTmdbApiKey() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = (prefs.getString(_tmdbKeyPref) ?? '').trim();
     if (saved.isNotEmpty) return saved;
     return _envTmdbKey.trim();
   }
 
-  static Future<void> setTmdbApiKey(String apiKey) async {
+  static Future setTmdbApiKey(String apiKey) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tmdbKeyPref, apiKey.trim());
   }
 
-  static Future<int> getSeekSeconds() async {
+  static Future getSeekSeconds() async {
     final prefs = await SharedPreferences.getInstance();
     return (prefs.getInt(_seekSecKey) ?? 15).clamp(5, 60);
   }
 
-  static Future<void> setSeekSeconds(int seconds) async {
+  static Future setSeekSeconds(int seconds) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_seekSecKey, seconds.clamp(5, 60));
   }
 
   // Direct Xtream IPTV Getters & Setters
-  static Future> getDirectXtream() async {
+  static Future getDirectXtream() async {
     final prefs = await SharedPreferences.getInstance();
     return {
       'url': (prefs.getString(_xtreamUrlKey) ?? '').trim(),
@@ -69,7 +69,7 @@ class AppSettingsService {
     };
   }
 
-  static Future<void> setDirectXtream({
+  static Future setDirectXtream({
     required String url,
     required String username,
     required String password,
@@ -81,7 +81,7 @@ class AppSettingsService {
   }
 
   // Direct Stalker Portal Getters & Setters
-  static Future> getDirectStalker() async {
+  static Future getDirectStalker() async {
     final prefs = await SharedPreferences.getInstance();
     return {
       'url': (prefs.getString(_stalkerUrlKey) ?? '').trim(),
@@ -91,7 +91,7 @@ class AppSettingsService {
     };
   }
 
-  static Future<void> setDirectStalker({
+  static Future setDirectStalker({
     required String url,
     required String mac,
     required String deviceId1,

@@ -2,23 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class StalkerService {
-  static String _normalizePortalUrl(String raw) {
-    var url = raw.trim();
-    if (url.isEmpty) return '';
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'http://$url';
-    }
-    url = url.replaceAll(RegExp(r'/+$'), '');
-    if (url.endsWith('/c')) {
-      return '$url/../portal.php';
-    }
-    if (!url.endsWith('.php')) {
-      return '$url/portal.php';
-    }
-    return url;
-  }
-
-  static List<String> _candidateEndpoints(String rawPortal) {
+  static List _candidateEndpoints(String rawPortal) {
     var base = rawPortal.trim();
     if (base.isEmpty) return [];
     if (!base.startsWith('http://') && !base.startsWith('https://')) {
@@ -26,7 +10,7 @@ class StalkerService {
     }
     base = base.replaceAll(RegExp(r'/+$'), '');
 
-    final List<String> list = [];
+    final List list = [];
     if (base.endsWith('.php')) {
       list.add(base);
     } else if (base.endsWith('/c')) {
@@ -82,7 +66,8 @@ class StalkerService {
     final cleanMac = mac.trim().toUpperCase();
     if (portalUrl.trim().isEmpty || cleanMac.isEmpty) return null;
 
-    for (final endpoint in _candidateEndpoints(portalUrl)) {
+    for (final ep in _candidateEndpoints(portalUrl)) {
+      final endpoint = ep.toString();
       try {
         final handshakeUri = Uri.parse(
           '$endpoint?type=stb&action=handshake&token=&prehash=&JsHttpRequest=1-xml',
@@ -92,15 +77,18 @@ class StalkerService {
           deviceId1: deviceId1,
           deviceId2: deviceId2,
         );
-        final res =
-            await http.get(handshakeUri, headers: headers).timeout(const Duration(seconds: 10));
+        final res = await http
+            .get(handshakeUri, headers: headers)
+            .timeout(const Duration(seconds: 10));
         if (res.statusCode != 200) continue;
 
         final decoded = jsonDecode(res.body);
-        final token = (decoded is Map ? decoded['js']?['token'] : null)?.toString() ?? '';
+        String token = '';
+        if (decoded is Map && decoded['js'] is Map) {
+          token = (decoded['js']['token'] ?? '').toString();
+        }
         if (token.isEmpty) continue;
 
-        // Profile call with Device ID 1 & 2
         final authHeaders = _buildHeaders(
           mac: cleanMac,
           token: token,
@@ -113,7 +101,9 @@ class StalkerService {
           '&device_id2=${Uri.encodeQueryComponent(deviceId2.trim())}'
           '&JsHttpRequest=1-xml',
         );
-        await http.get(profileUri, headers: authHeaders).timeout(const Duration(seconds: 8));
+        await http
+            .get(profileUri, headers: authHeaders)
+            .timeout(const Duration(seconds: 8));
 
         return {
           'endpoint': endpoint,
@@ -125,7 +115,7 @@ class StalkerService {
     return null;
   }
 
-  static Future<List> searchAndResolve({
+  static Future searchAndResolve({
     required String providerName,
     required String portalUrl,
     required String mac,
@@ -154,11 +144,15 @@ class StalkerService {
         '$endpoint?type=$mediaType&action=get_ordered_list'
         '&search=$query&sortby=added&p=1&JsHttpRequest=1-xml',
       );
-      final res = await http.get(listUri, headers: headers).timeout(const Duration(seconds: 12));
+      final res =
+          await http.get(listUri, headers: headers).timeout(const Duration(seconds: 12));
       if (res.statusCode != 200) return [];
 
       final decoded = jsonDecode(res.body);
-      final items = decoded is Map ? (decoded['js']?['data'] as List? ?? []) : [];
+      List items = [];
+      if (decoded is Map && decoded['js'] is Map && decoded['js']['data'] is List) {
+        items = decoded['js']['data'] as List;
+      }
       if (items.isEmpty) return [];
 
       final targetNorm = _normalize(title);
@@ -172,7 +166,6 @@ class StalkerService {
         String cmd = (raw['cmd'] ?? '').toString().trim();
         final itemId = (raw['id'] ?? '').toString().trim();
 
-        // Series ke liye season/episode cmd nikalna
         if (isTv && itemId.isNotEmpty) {
           final seasonCmd = await _findSeriesEpisodeCmd(
             endpoint: endpoint,
@@ -214,7 +207,7 @@ class StalkerService {
     }
   }
 
-  static Future<String?> _findSeriesEpisodeCmd({
+  static Future _findSeriesEpisodeCmd({
     required String endpoint,
     required Map<String, String> headers,
     required String seriesId,
@@ -231,7 +224,10 @@ class StalkerService {
       if (res.statusCode != 200) return null;
 
       final decoded = jsonDecode(res.body);
-      final seasons = decoded is Map ? (decoded['js']?['data'] as List? ?? []) : [];
+      List seasons = [];
+      if (decoded is Map && decoded['js'] is Map && decoded['js']['data'] is List) {
+        seasons = decoded['js']['data'] as List;
+      }
 
       for (final s in seasons) {
         if (s is! Map) continue;
@@ -251,8 +247,12 @@ class StalkerService {
                 await http.get(epUri, headers: headers).timeout(const Duration(seconds: 10));
             if (epRes.statusCode == 200) {
               final epDecoded = jsonDecode(epRes.body);
-              final eps =
-                  epDecoded is Map ? (epDecoded['js']?['data'] as List? ?? []) : [];
+              List eps = [];
+              if (epDecoded is Map &&
+                  epDecoded['js'] is Map &&
+                  epDecoded['js']['data'] is List) {
+                eps = epDecoded['js']['data'] as List;
+              }
               for (final ep in eps) {
                 if (ep is! Map) continue;
                 final eNum = int.tryParse((ep['episode_number'] ?? '').toString()) ??
@@ -273,7 +273,7 @@ class StalkerService {
     return null;
   }
 
-  static Future<String> _createPlayableLink({
+  static Future _createPlayableLink({
     required String endpoint,
     required Map<String, String> headers,
     required String mediaType,
@@ -292,7 +292,10 @@ class StalkerService {
       if (res.statusCode != 200) return '';
 
       final decoded = jsonDecode(res.body);
-      var rawCmd = (decoded is Map ? decoded['js']?['cmd'] : null)?.toString().trim() ?? '';
+      String rawCmd = '';
+      if (decoded is Map && decoded['js'] is Map) {
+        rawCmd = (decoded['js']['cmd'] ?? '').toString().trim();
+      }
       if (rawCmd.startsWith('ffmpeg ')) {
         rawCmd = rawCmd.substring(7).trim();
       }
