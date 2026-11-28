@@ -84,10 +84,12 @@ class CinemaPlayerActivity : Activity() {
         val title: String,
         val url: String,
         val isHindi: Boolean,
-        val isMultiAudio: Boolean = false
+        val isMultiAudio: Boolean = false,
+        val headers: Map<String, String> = emptyMap()
     )
 
     private var player: ExoPlayer? = null
+    private var httpDataSourceFactory: DefaultHttpDataSource.Factory? = null
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private lateinit var trackSelector: DefaultTrackSelector
     private lateinit var playerView: PlayerView
@@ -286,6 +288,13 @@ class CinemaPlayerActivity : Activity() {
         sourcesBtn.text = "Sources (${streamSources.size})"
         updateBoostButtonUi()
 
+        val initialHeaders = if (streamSources.isNotEmpty()) {
+            activeSourceIndex = activeSourceIndex.coerceIn(0, streamSources.size - 1)
+            streamSources[activeSourceIndex].headers
+        } else {
+            emptyMap()
+        }
+
         val directUrl = if (streamSources.isNotEmpty()) {
             activeSourceIndex = activeSourceIndex.coerceIn(0, streamSources.size - 1)
             streamSources[activeSourceIndex].url
@@ -308,7 +317,7 @@ class CinemaPlayerActivity : Activity() {
             currentActiveUrl = directUrl
             setConnectingState(false)
             loadingSpinner.visibility = View.VISIBLE
-            initExoPlayer(directUrl, currentMovieTitle, currentUserAgent, currentPreset)
+            initExoPlayer(directUrl, currentMovieTitle, currentUserAgent, currentPreset, initialHeaders)
             scheduleHideHud()
         } else if (tmdbId.isNotEmpty()) {
             loadingSpinner.visibility = View.GONE
@@ -353,12 +362,32 @@ class CinemaPlayerActivity : Activity() {
                         val ttl = obj.optString("title", currentMovieTitle)
                         val hin = obj.optBoolean("isHindi", isExplicitHindi("$srv $ttl"))
                         val multi = obj.optBoolean("isMultiAudio", isIndianMultiAudioServer("$srv $ttl"))
-                        streamSources.add(StreamSourceItem(srv, ttl, sUrl, hin, multi))
+                        val hdrMap = mutableMapOf<String, String>()
+                        val hdrObj = obj.optJSONObject("headers")
+                        if (hdrObj != null) {
+                            val keys = hdrObj.keys()
+                            while (keys.hasNext()) {
+                                val k = keys.next()
+                                val v = hdrObj.optString(k, "")
+                                if (v.isNotEmpty()) hdrMap[k] = v
+                            }
+                        }
+                        streamSources.add(StreamSourceItem(srv, ttl, sUrl, hin, multi, hdrMap))
                     }
                 }
             }
             activeSourceIndex = intent.getIntExtra("activeIndex", 0)
         } catch (_: Throwable) {}
+    }
+
+    private fun applyHeadersToHttpFactory(headers: Map<String, String>) {
+        val factory = httpDataSourceFactory ?: return
+        val ua = headers["User-Agent"]
+            ?: headers["user-agent"]
+            ?: currentUserAgent
+        factory.setUserAgent(ua)
+        val filtered = headers.filterKeys { !it.equals("User-Agent", ignoreCase = true) }
+        factory.setDefaultRequestProperties(filtered)
     }
 
     private fun setConnectingState(connecting: Boolean) {
@@ -497,7 +526,8 @@ class CinemaPlayerActivity : Activity() {
                             currentActiveUrl,
                             currentMovieTitle,
                             currentUserAgent,
-                            currentPreset
+                            currentPreset,
+                            streamSources[0].headers
                         )
                         if (!isTvDevice) {
                             playPauseBtn.requestFocus()
@@ -788,6 +818,7 @@ class CinemaPlayerActivity : Activity() {
     private fun isIptvSource(item: StreamSourceItem): Boolean {
         val urlLow = item.url.lowercase(Locale.ROOT)
         return urlLow.contains("/movie/") || urlLow.contains("/series/") ||
+            item.server.contains("stalker", true) || item.server.contains("portal", true) ||
             item.server.contains("livebox", true) || item.server.contains("iptv", true) ||
             item.server.contains("tv", true) || item.server.contains("ott", true)
     }
@@ -1663,6 +1694,8 @@ class CinemaPlayerActivity : Activity() {
         loadingSpinner.visibility = View.VISIBLE
         errorOverlay.visibility = View.GONE
 
+        applyHeadersToHttpFactory(selected.headers)
+
         val lower = selected.url.lowercase(Locale.ROOT)
         val itemBuilder = MediaItem.Builder()
             .setUri(Uri.parse(selected.url))
@@ -1721,7 +1754,13 @@ class CinemaPlayerActivity : Activity() {
         handler.postDelayed(hideUnlockRunnable, 2800)
     }
 
-    private fun initExoPlayer(url: String, title: String, userAgent: String, preset: PicturePreset) {
+    private fun initExoPlayer(
+        url: String,
+        title: String,
+        userAgent: String,
+        preset: PicturePreset,
+        headers: Map<String, String> = emptyMap()
+    ) {
         if (!isSafeUi()) return
         trackSelector = DefaultTrackSelector(this).apply {
             setParameters(
@@ -1741,6 +1780,8 @@ class CinemaPlayerActivity : Activity() {
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(20_000)
             .setUserAgent(userAgent)
+        httpDataSourceFactory = httpFactory
+        applyHeadersToHttpFactory(headers)
 
         val dataSourceFactory = DefaultDataSource.Factory(this, httpFactory)
 
