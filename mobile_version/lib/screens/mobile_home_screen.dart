@@ -79,9 +79,10 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     final now = DateTime.now();
     final today =
         '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final voteFilter = lang == 'en' ? '&vote_count.gte=5' : '&vote_count.gte=1';
     final dateParam = isTv
-        ? '&first_air_date.lte=$today&without_genres=10766,10767,10764,10763'
-        : '&primary_release_date.lte=$today';
+        ? '&first_air_date.lte=$today&without_genres=10766,10767,10764,10763$voteFilter'
+        : '&primary_release_date.lte=$today$voteFilter';
 
     final uri = Uri.parse(
       'https://api.themoviedb.org/3/discover/$type'
@@ -89,7 +90,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       '&with_original_language=$lang'
       '&sort_by=$sort'
       '$dateParam'
-      '&vote_count.gte=3'
       '&page=1',
     );
 
@@ -121,7 +121,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
     void addLatestFrom(List source, String badge) {
       Map? chosen;
-      // Pehle backdrop wali latest image dhoondhein
       for (final item in source) {
         if (item is Map) {
           final id = item['id'] ?? item['tmdb_id'] ?? item['title'] ?? item['name'];
@@ -132,7 +131,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           }
         }
       }
-      // Agar backdrop na mile to poster wali le lein taaki slide miss na ho
       if (chosen == null) {
         for (final item in source) {
           if (item is Map) {
@@ -192,13 +190,23 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     List netflixSeries = results[4] as List;
     List amazonSeries = results[5] as List;
 
-    // Agar koi bhi category empty aayi ho to direct TMDB se fallback lein
+    // Jo bhi category empty aaye uske liye direct TMDB se fallback lein
     if (tmdbKey.isNotEmpty) {
       final fallbackTasks = <Future>[];
+      final needBolly = bolly.isEmpty;
+      final needSouth = south.isEmpty;
       final needHolly = holly.isEmpty;
       final needHindiSeries = hindiSeries.isEmpty;
       final needGlobalSeries = netflixSeries.isEmpty && amazonSeries.isEmpty;
 
+      if (needBolly) {
+        fallbackTasks.add(
+            _fetchTmdbFallback(apiKey: tmdbKey, isTv: false, lang: 'hi'));
+      }
+      if (needSouth) {
+        fallbackTasks.add(_fetchTmdbFallback(
+            apiKey: tmdbKey, isTv: false, lang: 'te|ta|ml|kn'));
+      }
       if (needHolly) {
         fallbackTasks.add(
             _fetchTmdbFallback(apiKey: tmdbKey, isTv: false, lang: 'en'));
@@ -215,6 +223,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       if (fallbackTasks.isNotEmpty) {
         final fbResults = await Future.wait(fallbackTasks);
         int idx = 0;
+        if (needBolly) bolly = fbResults[idx++];
+        if (needSouth) south = fbResults[idx++];
         if (needHolly) holly = fbResults[idx++];
         if (needHindiSeries) hindiSeries = fbResults[idx++];
         if (needGlobalSeries) netflixSeries = fbResults[idx++];
