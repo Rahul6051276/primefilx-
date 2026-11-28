@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/app_settings_service.dart';
@@ -32,12 +33,70 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   List _netflixWebSeries = [];
   List _amazonWebSeries = [];
 
+  final PageController _bannerController = PageController();
+  Timer? _bannerTimer;
+  int _currentBannerPage = 0;
+
   final GlobalKey _myListKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
     _initData();
+  }
+
+  @override
+  void dispose() {
+    _bannerTimer?.cancel();
+    _bannerController.dispose();
+    super.dispose();
+  }
+
+  void _startBannerAutoSlide(int count) {
+    _bannerTimer?.cancel();
+    if (count <= 1) return;
+    _bannerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_bannerController.hasClients) return;
+      final next = (_currentBannerPage + 1) % count;
+      _bannerController.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  List _buildBannerSlides() {
+    final List slides = [];
+    final Set usedIds = {};
+
+    void addLatestFrom(List source, String badge) {
+      for (final item in source) {
+        if (item is Map) {
+          final id = item['id'] ?? item['tmdb_id'] ?? item['title'] ?? item['name'];
+          final img = (item['backdrop_path'] ?? item['poster_path'] ?? '').toString();
+          if (img.isNotEmpty && (id == null || usedIds.add(id))) {
+            slides.add({
+              'item': item,
+              'badge': badge,
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    addLatestFrom(_bollywoodMovies, 'NEW • BOLLYWOOD');
+    addLatestFrom(_southMovies, 'NEW • SOUTH MOVIE');
+    addLatestFrom(_hollywoodMovies, 'NEW • HOLLYWOOD');
+    addLatestFrom(_hindiWebSeries, 'NEW • HINDI SERIES');
+
+    final globalSeries = _netflixWebSeries.isNotEmpty
+        ? _netflixWebSeries
+        : _amazonWebSeries;
+    addLatestFrom(globalSeries, 'NEW • GLOBAL SERIES');
+
+    return slides;
   }
 
   Future<void> _initData() async {
@@ -64,8 +123,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       _netflixWebSeries = results[4] as List;
       _amazonWebSeries = results[5] as List;
       _connectedProviders = (results[6] as List).length;
+      _currentBannerPage = 0;
       _isLoading = false;
     });
+
+    final slides = _buildBannerSlides();
+    _startBannerAutoSlide(slides.length);
   }
 
   void _openSearchSheet() {
@@ -167,96 +230,179 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
   }
 
   Widget _buildHeroBanner() {
-    final heroList = _bollywoodMovies.isNotEmpty
-        ? _bollywoodMovies
-        : (_hollywoodMovies.isNotEmpty ? _hollywoodMovies : _southMovies);
-    if (heroList.isEmpty) return const SizedBox.shrink();
+    final slides = _buildBannerSlides();
+    if (slides.isEmpty) return const SizedBox.shrink();
 
-    final hero = heroList.first;
-    final backdrop = TmdbService.getBackdropUrl(
-      hero['backdrop_path'] ?? hero['poster_path'],
-    );
-    final title = (hero['title'] ?? hero['name'] ?? '').toString();
+    final activeIndex = _currentBannerPage.clamp(0, slides.length - 1);
 
-    return Stack(
-      alignment: Alignment.bottomLeft,
-      children: [
-        backdrop.isNotEmpty
-            ? CachedNetworkImage(
-                imageUrl: backdrop,
-                height: 310,
-                width: double.infinity,
-                fit: BoxFit.cover,
-              )
-            : Container(height: 310, color: _cardBg),
-        Container(
-          height: 310,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.black38,
-                Colors.transparent,
-                _darkBg,
-              ],
+    return SizedBox(
+      height: 335,
+      child: Stack(
+        children: [
+          PageView.builder(
+            controller: _bannerController,
+            itemCount: slides.length,
+            onPageChanged: (index) {
+              setState(() => _currentBannerPage = index);
+            },
+            itemBuilder: (context, index) {
+              final slide = slides[index];
+              final hero = slide['item'];
+              final badge = (slide['badge'] ?? 'NEW RELEASE').toString();
+              final backdrop = TmdbService.getBackdropUrl(
+                hero['backdrop_path'] ?? hero['poster_path'],
+              );
+              final title = (hero['title'] ?? hero['name'] ?? '').toString();
+              final releaseDate =
+                  (hero['release_date'] ?? hero['first_air_date'] ?? '').toString();
+              final year =
+                  releaseDate.length >= 4 ? releaseDate.substring(0, 4) : '';
+              final rating = (hero['vote_average'] is num)
+                  ? (hero['vote_average'] as num).toStringAsFixed(1)
+                  : '';
+
+              return GestureDetector(
+                onTap: () => MobileStreamModal.show(context, hero),
+                child: Stack(
+                  alignment: Alignment.bottomLeft,
+                  children: [
+                    backdrop.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: backdrop,
+                            height: 335,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                          )
+                        : Container(height: 335, color: _cardBg),
+                    Container(
+                      height: 335,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black26,
+                            Colors.transparent,
+                            Color(0xCC0B1118),
+                            _darkBg,
+                          ],
+                          stops: [0.0, 0.35, 0.78, 1.0],
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 9, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _primeBlue,
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: Text(
+                                  badge,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.9,
+                                  ),
+                                ),
+                              ),
+                              if (year.isNotEmpty || rating.isNotEmpty) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3.5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(5),
+                                    border: Border.all(color: Colors.white24),
+                                  ),
+                                  child: Text(
+                                    [
+                                      if (year.isNotEmpty) year,
+                                      if (rating.isNotEmpty && rating != '0.0')
+                                        '★ $rating',
+                                    ].join('  •  '),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 23,
+                              fontWeight: FontWeight.w900,
+                              height: 1.15,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _primeBlue,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 22, vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            onPressed: () => MobileStreamModal.show(context, hero),
+                            icon: const Icon(Icons.play_arrow, size: 22),
+                            label: const Text(
+                              'Watch Now',
+                              style: TextStyle(
+                                  fontSize: 14.5, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          Positioned(
+            bottom: 8,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(slides.length, (idx) {
+                final isSelected = idx == activeIndex;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  height: 6,
+                  width: isSelected ? 22 : 6,
+                  decoration: BoxDecoration(
+                    color: isSelected ? _primeBlue : Colors.white38,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                );
+              }),
             ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _primeBlue,
-                  borderRadius: BorderRadius.circular(5),
-                ),
-                child: const Text(
-                  'FEATURED',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _primeBlue,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 11),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                onPressed: () => MobileStreamModal.show(context, hero),
-                icon: const Icon(Icons.play_arrow, size: 22),
-                label: const Text(
-                  'Watch Now',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
