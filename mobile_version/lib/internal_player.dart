@@ -29,10 +29,13 @@ class InternalPlayer extends StatefulWidget {
 
 class _InternalPlayerState extends State<InternalPlayer> {
   static const Color _primeBlue = Color(0xFF00A8E1);
-  static const MethodChannel _playerChannel = MethodChannel('com.primeflix/player');
+  static const MethodChannel _playerChannel =
+      MethodChannel('com.primeflix/player');
 
   final List _servers = [];
   StreamSubscription? _streamSub;
+  Timer? _launchDelayTimer;
+  Timer? _maxWaitTimer;
   bool _isSearching = true;
   bool _launchedNative = false;
   String? _statusMessage;
@@ -65,6 +68,8 @@ class _InternalPlayerState extends State<InternalPlayer> {
   }) async {
     if (_launchedNative || !mounted) return;
     _launchedNative = true;
+    _launchDelayTimer?.cancel();
+    _maxWaitTimer?.cancel();
 
     final gistUrl = await AppSettingsService.getGistUrl();
     final tmdbKey = await AppSettingsService.getTmdbApiKey();
@@ -102,6 +107,25 @@ class _InternalPlayerState extends State<InternalPlayer> {
     }
   }
 
+  void _openWithCollectedServers() {
+    if (_launchedNative || !mounted) return;
+    if (_servers.isNotEmpty) {
+      // Hindi/Dubbed streams ko upar rakhein
+      _servers.sort((a, b) {
+        final aHi = (a.isHindi == true) ? 0 : 1;
+        final bHi = (b.isHindi == true) ? 0 : 1;
+        return aHi.compareTo(bHi);
+      });
+      final list = _servers.map((s) => s.toPlayerMap()).toList();
+      _launchCinemaPlayer(
+        url: _servers.first.url,
+        sources: list,
+      );
+    } else {
+      _launchCinemaPlayer();
+    }
+  }
+
   Future _startPlayerFlow() async {
     final direct = (widget.directUrl ?? '').trim();
     if (direct.isNotEmpty) {
@@ -109,14 +133,14 @@ class _InternalPlayerState extends State<InternalPlayer> {
       return;
     }
 
-    if (widget.tmdbId > 0) {
-      await _launchCinemaPlayer();
-      return;
-    }
-
     setState(() {
       _isSearching = true;
-      _statusMessage = null;
+      _statusMessage = 'Fetching streams from Stremio, Xtream & Stalker...';
+    });
+
+    // Maximum 16 second wait taaki player hang na ho
+    _maxWaitTimer = Timer(const Duration(seconds: 16), () {
+      _openWithCollectedServers();
     });
 
     _streamSub = StreamService.fetchStreams(
@@ -126,41 +150,41 @@ class _InternalPlayerState extends State<InternalPlayer> {
       season: widget.season,
       episode: widget.episode,
     ).listen(
-      (link) async {
+      (link) {
         if (!mounted) return;
         final exists = _servers.any((item) => item.url == link.url);
         if (!exists) {
-          _servers.add(link);
+          setState(() {
+            _servers.add(link);
+            _statusMessage =
+                'Found ${_servers.length} sources (${link.providerName})...';
+          });
         }
-        if (!_launchedNative && _servers.isNotEmpty) {
-          final list = _servers.map((s) => s.toPlayerMap()).toList();
-          await _launchCinemaPlayer(
-            url: _servers.first.url,
-            sources: list,
-          );
+
+        // Pehla link milne ke 1.5s baad player kholein taaki baaki servers bhi list mein jud jayein
+        if (!_launchedNative && _launchDelayTimer == null) {
+          _launchDelayTimer = Timer(const Duration(milliseconds: 1500), () {
+            _openWithCollectedServers();
+          });
         }
       },
-      onDone: () async {
+      onDone: () {
         if (!mounted) return;
         setState(() => _isSearching = false);
-        if (!_launchedNative && _servers.isNotEmpty) {
-          final list = _servers.map((s) => s.toPlayerMap()).toList();
-          await _launchCinemaPlayer(
-            url: _servers.first.url,
-            sources: list,
-          );
-        }
+        _openWithCollectedServers();
       },
       onError: (_) {
-        if (mounted) {
-          setState(() => _isSearching = false);
-        }
+        if (!mounted) return;
+        setState(() => _isSearching = false);
+        _openWithCollectedServers();
       },
     );
   }
 
   @override
   void dispose() {
+    _launchDelayTimer?.cancel();
+    _maxWaitTimer?.cancel();
     _streamSub?.cancel();
     _restorePortraitMode();
     super.dispose();
@@ -203,7 +227,7 @@ class _InternalPlayerState extends State<InternalPlayer> {
                     const SizedBox(height: 12),
                     Text(
                       _statusMessage ??
-                          'No stream found. Settings mein Gist URL / TMDB API Key check karein.',
+                          'No stream found. Settings mein Gist URL / Xtream / Stalker check karein.',
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: Colors.white70, fontSize: 14),
                     ),

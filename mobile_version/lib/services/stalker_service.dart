@@ -86,6 +86,19 @@ class StalkerService {
     }
   }
 
+  static List _extractDataList(dynamic decoded) {
+    if (decoded is Map) {
+      final js = decoded['js'];
+      if (js is Map && js['data'] is List) {
+        return js['data'] as List;
+      }
+      if (js is List) {
+        return js;
+      }
+    }
+    return [];
+  }
+
   static Future authenticate({
     required String portalUrl,
     required String mac,
@@ -170,7 +183,6 @@ class StalkerService {
     final headers = Map<String, String>.from(auth['headers'] as Map);
     final mediaType = isTv ? 'series' : 'vod';
 
-    // Pehle full title se search karein, na mile to short title se
     final queries = [title.trim()];
     if (title.contains(':')) {
       queries.add(title.split(':').first.trim());
@@ -184,68 +196,68 @@ class StalkerService {
       if (q.isEmpty || results.isNotEmpty) continue;
       final encodedQ = Uri.encodeQueryComponent(q);
 
-      try {
-        final listUri = Uri.parse(
-          '$endpoint?type=$mediaType&action=get_ordered_list'
-          '&category=*&genre=*&search=$encodedQ&sortby=added&p=1&JsHttpRequest=1-xml',
-        );
-        final res = await http
-            .get(listUri, headers: headers)
-            .timeout(const Duration(seconds: 12));
-        if (res.statusCode != 200) continue;
+      // Pehle bina category ke search karein, phir category=0 ke saath
+      final searchUrls = [
+        '$endpoint?type=$mediaType&action=get_ordered_list&search=$encodedQ&p=1&JsHttpRequest=1-xml',
+        '$endpoint?type=$mediaType&action=get_ordered_list&category=0&search=$encodedQ&p=1&JsHttpRequest=1-xml',
+      ];
 
-        final decoded = _safeJson(res.body);
-        List items = [];
-        if (decoded is Map &&
-            decoded['js'] is Map &&
-            decoded['js']['data'] is List) {
-          items = decoded['js']['data'] as List;
-        }
-
-        for (final raw in items) {
-          if (raw is! Map) continue;
-          final itemName = (raw['name'] ?? raw['o_name'] ?? '').toString();
-          if (!_isMatch(_normalize(itemName), targetNorm)) continue;
-
-          String cmd = (raw['cmd'] ?? '').toString().trim();
-          final itemId = (raw['id'] ?? '').toString().trim();
-
-          if (isTv && itemId.isNotEmpty) {
-            final seasonCmd = await _findSeriesEpisodeCmd(
-              endpoint: endpoint,
-              headers: headers,
-              seriesId: itemId,
-              season: season ?? 1,
-              episode: episode ?? 1,
-            );
-            if (seasonCmd != null && seasonCmd.isNotEmpty) {
-              cmd = seasonCmd;
-            }
+      List items = [];
+      for (final sUrl in searchUrls) {
+        if (items.isNotEmpty) break;
+        try {
+          final res = await http
+              .get(Uri.parse(sUrl), headers: headers)
+              .timeout(const Duration(seconds: 12));
+          if (res.statusCode == 200) {
+            items = _extractDataList(_safeJson(res.body));
           }
+        } catch (_) {}
+      }
 
-          if (cmd.isEmpty) continue;
+      for (final raw in items) {
+        if (raw is! Map) continue;
+        final itemName = (raw['name'] ?? raw['o_name'] ?? '').toString();
+        if (!_isMatch(_normalize(itemName), targetNorm)) continue;
 
-          final playUrl = await _createPlayableLink(
+        String cmd = (raw['cmd'] ?? '').toString().trim();
+        final itemId = (raw['id'] ?? '').toString().trim();
+
+        if (isTv && itemId.isNotEmpty) {
+          final seasonCmd = await _findSeriesEpisodeCmd(
             endpoint: endpoint,
             headers: headers,
-            mediaType: mediaType,
-            cmd: cmd,
-            episode: isTv ? (episode ?? 1) : null,
+            seriesId: itemId,
+            season: season ?? 1,
+            episode: episode ?? 1,
           );
-
-          if (playUrl.isNotEmpty && playUrl.startsWith('http')) {
-            results.add({
-              'providerName': providerName,
-              'title': isTv
-                  ? '$itemName • S${season ?? 1}E${episode ?? 1}'
-                  : itemName,
-              'url': playUrl,
-              'headers': headers,
-            });
-            if (results.length >= 4) break;
+          if (seasonCmd != null && seasonCmd.isNotEmpty) {
+            cmd = seasonCmd;
           }
         }
-      } catch (_) {}
+
+        if (cmd.isEmpty) continue;
+
+        final playUrl = await _createPlayableLink(
+          endpoint: endpoint,
+          headers: headers,
+          mediaType: mediaType,
+          cmd: cmd,
+          episode: isTv ? (episode ?? 1) : null,
+        );
+
+        if (playUrl.isNotEmpty && playUrl.startsWith('http')) {
+          results.add({
+            'providerName': providerName,
+            'title': isTv
+                ? '$itemName • S${season ?? 1}E${episode ?? 1}'
+                : itemName,
+            'url': playUrl,
+            'headers': headers,
+          });
+          if (results.length >= 4) break;
+        }
+      }
     }
 
     return results;
@@ -268,13 +280,7 @@ class StalkerService {
           .timeout(const Duration(seconds: 10));
       if (res.statusCode != 200) return null;
 
-      final decoded = _safeJson(res.body);
-      List seasons = [];
-      if (decoded is Map &&
-          decoded['js'] is Map &&
-          decoded['js']['data'] is List) {
-        seasons = decoded['js']['data'] as List;
-      }
+      final seasons = _extractDataList(_safeJson(res.body));
 
       for (final s in seasons) {
         if (s is! Map) continue;
@@ -294,13 +300,7 @@ class StalkerService {
                 .get(epUri, headers: headers)
                 .timeout(const Duration(seconds: 10));
             if (epRes.statusCode == 200) {
-              final epDecoded = _safeJson(epRes.body);
-              List eps = [];
-              if (epDecoded is Map &&
-                  epDecoded['js'] is Map &&
-                  epDecoded['js']['data'] is List) {
-                eps = epDecoded['js']['data'] as List;
-              }
+              final eps = _extractDataList(_safeJson(epRes.body));
               for (final ep in eps) {
                 if (ep is! Map) continue;
                 final eNum =
@@ -330,11 +330,19 @@ class StalkerService {
     required String cmd,
     int? episode,
   }) async {
+    var cleanCmd = cmd.trim();
+    if (cleanCmd.startsWith('ffmpeg ')) {
+      cleanCmd = cleanCmd.substring(7).trim();
+    }
+    if (cleanCmd.startsWith('http://') || cleanCmd.startsWith('https://')) {
+      return cleanCmd;
+    }
+
     try {
       final epParam = episode != null ? '&series=$episode' : '';
       final linkUri = Uri.parse(
         '$endpoint?type=$mediaType&action=create_link'
-        '&cmd=${Uri.encodeQueryComponent(cmd)}'
+        '&cmd=${Uri.encodeQueryComponent(cleanCmd)}'
         '$epParam&JsHttpRequest=1-xml',
       );
       final res = await http
