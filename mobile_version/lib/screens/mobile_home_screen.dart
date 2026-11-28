@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:http/http.dart' as http;
 import '../services/app_settings_service.dart';
 import '../services/stream_service.dart';
 import '../services/tmdb_service.dart';
@@ -66,23 +68,92 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     });
   }
 
+  Future<List> _fetchTmdbFallback({
+    required String apiKey,
+    required bool isTv,
+    required String lang,
+  }) async {
+    if (apiKey.trim().isEmpty) return [];
+    final type = isTv ? 'tv' : 'movie';
+    final sort = isTv ? 'first_air_date.desc' : 'primary_release_date.desc';
+    final now = DateTime.now();
+    final today =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final dateParam = isTv
+        ? '&first_air_date.lte=$today&without_genres=10766,10767,10764,10763'
+        : '&primary_release_date.lte=$today';
+
+    final uri = Uri.parse(
+      'https://api.themoviedb.org/3/discover/$type'
+      '?api_key=$apiKey'
+      '&with_original_language=$lang'
+      '&sort_by=$sort'
+      '$dateParam'
+      '&vote_count.gte=3'
+      '&page=1',
+    );
+
+    try {
+      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return [];
+      final decoded = jsonDecode(res.body);
+      final results = decoded['results'];
+      if (results is! List) return [];
+      final List list = [];
+      for (final raw in results) {
+        if (raw is Map &&
+            (raw['backdrop_path'] != null || raw['poster_path'] != null)) {
+          final map = Map<String, dynamic>.from(raw);
+          map['isTv'] = isTv;
+          map['tmdb_id'] = map['id'];
+          list.add(map);
+        }
+      }
+      return list;
+    } catch (_) {
+      return [];
+    }
+  }
+
   List _buildBannerSlides() {
     final List slides = [];
     final Set usedIds = {};
 
     void addLatestFrom(List source, String badge) {
+      Map? chosen;
+      // Pehle backdrop wali latest image dhoondhein
       for (final item in source) {
         if (item is Map) {
           final id = item['id'] ?? item['tmdb_id'] ?? item['title'] ?? item['name'];
-          final img = (item['backdrop_path'] ?? item['poster_path'] ?? '').toString();
-          if (img.isNotEmpty && (id == null || usedIds.add(id))) {
-            slides.add({
-              'item': item,
-              'badge': badge,
-            });
+          final bd = (item['backdrop_path'] ?? '').toString();
+          if (bd.isNotEmpty && (id == null || !usedIds.contains(id))) {
+            chosen = item;
             break;
           }
         }
+      }
+      // Agar backdrop na mile to poster wali le lein taaki slide miss na ho
+      if (chosen == null) {
+        for (final item in source) {
+          if (item is Map) {
+            final id = item['id'] ?? item['tmdb_id'] ?? item['title'] ?? item['name'];
+            final ps = (item['poster_path'] ?? item['poster'] ?? '').toString();
+            if (ps.isNotEmpty && (id == null || !usedIds.contains(id))) {
+              chosen = item;
+              break;
+            }
+          }
+        }
+      }
+
+      if (chosen != null) {
+        final id =
+            chosen['id'] ?? chosen['tmdb_id'] ?? chosen['title'] ?? chosen['name'];
+        if (id != null) usedIds.add(id);
+        slides.add({
+          'item': chosen,
+          'badge': badge,
+        });
       }
     }
 
@@ -91,15 +162,16 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     addLatestFrom(_hollywoodMovies, 'NEW • HOLLYWOOD');
     addLatestFrom(_hindiWebSeries, 'NEW • HINDI SERIES');
 
-    final globalSeries = _netflixWebSeries.isNotEmpty
-        ? _netflixWebSeries
-        : _amazonWebSeries;
-    addLatestFrom(globalSeries, 'NEW • GLOBAL SERIES');
+    final List globalPool = [
+      ..._netflixWebSeries,
+      ..._amazonWebSeries,
+    ];
+    addLatestFrom(globalPool, 'NEW • GLOBAL SERIES');
 
     return slides;
   }
 
-  Future<void> _initData() async {
+  Future _initData() async {
     setState(() => _isLoading = true);
 
     final tmdbKey = await AppSettingsService.getTmdbApiKey();
@@ -113,15 +185,51 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       StreamService.loadProviders(forceRefresh: true),
     ]);
 
+    List bolly = results[0] as List;
+    List south = results[1] as List;
+    List holly = results[2] as List;
+    List hindiSeries = results[3] as List;
+    List netflixSeries = results[4] as List;
+    List amazonSeries = results[5] as List;
+
+    // Agar koi bhi category empty aayi ho to direct TMDB se fallback lein
+    if (tmdbKey.isNotEmpty) {
+      final fallbackTasks = <Future>[];
+      final needHolly = holly.isEmpty;
+      final needHindiSeries = hindiSeries.isEmpty;
+      final needGlobalSeries = netflixSeries.isEmpty && amazonSeries.isEmpty;
+
+      if (needHolly) {
+        fallbackTasks.add(
+            _fetchTmdbFallback(apiKey: tmdbKey, isTv: false, lang: 'en'));
+      }
+      if (needHindiSeries) {
+        fallbackTasks.add(
+            _fetchTmdbFallback(apiKey: tmdbKey, isTv: true, lang: 'hi'));
+      }
+      if (needGlobalSeries) {
+        fallbackTasks.add(
+            _fetchTmdbFallback(apiKey: tmdbKey, isTv: true, lang: 'en'));
+      }
+
+      if (fallbackTasks.isNotEmpty) {
+        final fbResults = await Future.wait(fallbackTasks);
+        int idx = 0;
+        if (needHolly) holly = fbResults[idx++];
+        if (needHindiSeries) hindiSeries = fbResults[idx++];
+        if (needGlobalSeries) netflixSeries = fbResults[idx++];
+      }
+    }
+
     if (!mounted) return;
     setState(() {
       _hasTmdbKey = tmdbKey.isNotEmpty;
-      _bollywoodMovies = results[0] as List;
-      _southMovies = results[1] as List;
-      _hollywoodMovies = results[2] as List;
-      _hindiWebSeries = results[3] as List;
-      _netflixWebSeries = results[4] as List;
-      _amazonWebSeries = results[5] as List;
+      _bollywoodMovies = bolly;
+      _southMovies = south;
+      _hollywoodMovies = holly;
+      _hindiWebSeries = hindiSeries;
+      _netflixWebSeries = netflixSeries;
+      _amazonWebSeries = amazonSeries;
       _connectedProviders = (results[6] as List).length;
       _currentBannerPage = 0;
       _isLoading = false;
@@ -146,7 +254,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
-            Future<void> runSearch(String q) async {
+            Future runSearch(String q) async {
               if (q.trim().isEmpty) return;
               setSheetState(() => searching = true);
               final data = await TmdbService.searchMulti(q);
