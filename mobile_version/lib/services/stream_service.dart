@@ -12,6 +12,10 @@ class StreamLink {
   final String quality;
   final bool isHindi;
   final Map headers;
+  final String stalkerEndpoint;
+  final String stalkerCmd;
+  final String stalkerMediaType;
+  final int stalkerEpisode;
 
   StreamLink({
     required this.providerName,
@@ -20,6 +24,10 @@ class StreamLink {
     this.quality = 'HD',
     this.isHindi = false,
     this.headers = const {},
+    this.stalkerEndpoint = '',
+    this.stalkerCmd = '',
+    this.stalkerMediaType = 'vod',
+    this.stalkerEpisode = 0,
   });
 
   Map toPlayerMap() {
@@ -30,6 +38,10 @@ class StreamLink {
       'quality': quality,
       'isHindi': isHindi,
       'headers': headers,
+      'stalkerEndpoint': stalkerEndpoint,
+      'stalkerCmd': stalkerCmd,
+      'stalkerMediaType': stalkerMediaType,
+      'stalkerEpisode': stalkerEpisode,
     };
   }
 }
@@ -44,7 +56,7 @@ class StreamService {
     'Accept': '*/*',
   };
 
-  static Future<int> saveAndConnectGistUrl(String rawUrl) async {
+  static Future saveAndConnectGistUrl(String rawUrl) async {
     await AppSettingsService.setGistUrl(rawUrl);
     _cachedProviders = [];
     _xtreamVodCache.clear();
@@ -53,7 +65,7 @@ class StreamService {
     return providers.length;
   }
 
-  static Future<List> loadProviders({
+  static Future loadProviders({
     bool forceRefresh = false,
   }) async {
     if (!forceRefresh && _cachedProviders.isNotEmpty) {
@@ -62,12 +74,11 @@ class StreamService {
 
     final List combined = [];
 
-    // 1. Direct Xtream IPTV from App Settings
     final directXtream = await AppSettingsService.getDirectXtream();
     if ((directXtream['url'] ?? '').isNotEmpty &&
         (directXtream['username'] ?? '').isNotEmpty &&
         (directXtream['password'] ?? '').isNotEmpty) {
-      combined.add(<String, dynamic>{
+      combined.add({
         'name': 'Xtream IPTV (Direct)',
         'type': 'xtream',
         'xc_host': directXtream['url'],
@@ -76,11 +87,10 @@ class StreamService {
       });
     }
 
-    // 2. Direct Stalker Portal from App Settings
     final directStalker = await AppSettingsService.getDirectStalker();
     if ((directStalker['url'] ?? '').isNotEmpty &&
         (directStalker['mac'] ?? '').isNotEmpty) {
-      combined.add(<String, dynamic>{
+      combined.add({
         'name': 'Stalker Portal (Direct)',
         'type': 'stalker',
         'portal_url': directStalker['url'],
@@ -90,7 +100,6 @@ class StreamService {
       });
     }
 
-    // 3. GitHub Gist Providers (Stremio + Xtream + Stalker)
     final gistUrl = await AppSettingsService.getGistUrl();
     if (gistUrl.isNotEmpty) {
       try {
@@ -121,14 +130,14 @@ class StreamService {
     return _cachedProviders;
   }
 
-  static Stream<StreamLink> fetchStreams({
+  static Stream fetchStreams({
     required int tmdbId,
     required String title,
     required bool isTv,
     int? season,
     int? episode,
   }) {
-    final controller = StreamController<StreamLink>();
+    final controller = StreamController();
 
     () async {
       try {
@@ -144,7 +153,8 @@ class StreamService {
               .timeout(const Duration(seconds: 6));
         } catch (_) {}
 
-        final List<Future> tasks = [];
+        final tasks = [Future.value()];
+        tasks.clear();
 
         for (final p in providers) {
           final provider = Map<String, dynamic>.from(p as Map);
@@ -197,7 +207,7 @@ class StreamService {
     return controller.stream;
   }
 
-  static Future<void> _fetchFromStremio({
+  static Future _fetchFromStremio({
     required Map provider,
     required String imdbId,
     required bool isTv,
@@ -253,7 +263,7 @@ class StreamService {
     } catch (_) {}
   }
 
-  static Future<void> _fetchFromXtream({
+  static Future _fetchFromXtream({
     required Map provider,
     required String title,
     required String tmdbId,
@@ -396,7 +406,7 @@ class StreamService {
     } catch (_) {}
   }
 
-  static Future<void> _fetchFromStalker({
+  static Future _fetchFromStalker({
     required Map provider,
     required String title,
     required bool isTv,
@@ -443,6 +453,12 @@ class StreamService {
             quality: _extractQuality(streamTitle),
             isHindi: _isHindi('$name $streamTitle'),
             headers: headers,
+            stalkerEndpoint: (raw['stalkerEndpoint'] ?? '').toString(),
+            stalkerCmd: (raw['stalkerCmd'] ?? '').toString(),
+            stalkerMediaType: (raw['stalkerMediaType'] ?? 'vod').toString(),
+            stalkerEpisode: (raw['stalkerEpisode'] is int)
+                ? raw['stalkerEpisode'] as int
+                : 0,
           ));
         }
       }

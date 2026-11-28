@@ -67,6 +67,7 @@ import org.json.JSONObject
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.Collections
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
@@ -85,7 +86,11 @@ class CinemaPlayerActivity : Activity() {
         val url: String,
         val isHindi: Boolean,
         val isMultiAudio: Boolean = false,
-        val headers: Map<String, String> = emptyMap()
+        val headers: Map<String, String> = emptyMap(),
+        val stalkerEndpoint: String = "",
+        val stalkerCmd: String = "",
+        val stalkerMediaType: String = "vod",
+        val stalkerEpisode: Int = 0
     )
 
     private var player: ExoPlayer? = null
@@ -288,36 +293,28 @@ class CinemaPlayerActivity : Activity() {
         sourcesBtn.text = "Sources (${streamSources.size})"
         updateBoostButtonUi()
 
-        val initialHeaders = if (streamSources.isNotEmpty()) {
+        if (streamSources.isNotEmpty()) {
             activeSourceIndex = activeSourceIndex.coerceIn(0, streamSources.size - 1)
-            streamSources[activeSourceIndex].headers
-        } else {
-            emptyMap()
-        }
-
-        val directUrl = if (streamSources.isNotEmpty()) {
-            activeSourceIndex = activeSourceIndex.coerceIn(0, streamSources.size - 1)
-            streamSources[activeSourceIndex].url
-        } else {
-            rawUrl
-        }
-
-        if (directUrl.isNotEmpty()) {
-            if (streamSources.isEmpty()) {
-                streamSources.add(
-                    StreamSourceItem(
-                        server = "Live Broadcast",
-                        title = currentMovieTitle,
-                        url = directUrl,
-                        isHindi = isExplicitHindi(currentMovieTitle)
-                    )
-                )
-                sourcesBtn.text = "Sources (1)"
-            }
-            currentActiveUrl = directUrl
+            val firstSrc = streamSources[activeSourceIndex]
+            currentActiveUrl = firstSrc.url
             setConnectingState(false)
             loadingSpinner.visibility = View.VISIBLE
-            initExoPlayer(directUrl, currentMovieTitle, currentUserAgent, currentPreset, initialHeaders)
+            resolveAndStartSource(firstSrc, isInitial = true)
+            scheduleHideHud()
+        } else if (rawUrl.isNotEmpty()) {
+            streamSources.add(
+                StreamSourceItem(
+                    server = "Live Broadcast",
+                    title = currentMovieTitle,
+                    url = rawUrl,
+                    isHindi = isExplicitHindi(currentMovieTitle)
+                )
+            )
+            sourcesBtn.text = "Sources (1)"
+            currentActiveUrl = rawUrl
+            setConnectingState(false)
+            loadingSpinner.visibility = View.VISIBLE
+            initExoPlayer(rawUrl, currentMovieTitle, currentUserAgent, currentPreset)
             scheduleHideHud()
         } else if (tmdbId.isNotEmpty()) {
             loadingSpinner.visibility = View.GONE
@@ -326,6 +323,102 @@ class CinemaPlayerActivity : Activity() {
         } else {
             showError("Stream URL खाली है।")
         }
+    }
+
+    private fun resolveFreshStalkerUrl(src: StreamSourceItem): String {
+        if (src.stalkerCmd.isEmpty() || src.stalkerEndpoint.isEmpty()) {
+            return src.url
+        }
+        var cleanCmd = src.stalkerCmd.trim()
+        if (cleanCmd.startsWith("ffmpeg ")) {
+            cleanCmd = cleanCmd.substring(7).trim()
+        }
+        if (cleanCmd.startsWith("http://") || cleanCmd.startsWith("https://")) {
+            return cleanCmd
+        }
+        var conn: HttpURLConnection? = null
+        return try {
+            val encodedCmd = URLEncoder.encode(cleanCmd, "UTF-8")
+            val epParam = if (src.stalkerEpisode > 0) "&series=${src.stalkerEpisode}" else ""
+            val reqUrl = "${src.stalkerEndpoint}?type=${src.stalkerMediaType}&action=create_link&cmd=$encodedCmd$epParam&JsHttpRequest=1-xml"
+            conn = (URL(reqUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                requestMethod = "GET"
+                src.headers.forEach { (k, v) -> setRequestProperty(k, v) }
+            }
+            if (conn.responseCode in 200..299) {
+                val body = conn.inputStream.bufferedReader().use { it.readText() }.trim()
+                val jsonStart = body.indexOf('{')
+                val cleanJson = if (jsonStart > 0) body.substring(jsonStart) else body
+                val jsObj = JSONObject(cleanJson).optJSONObject("js")
+                var playCmd = jsObj?.optString("cmd", "")?.trim().orEmpty()
+                if (playCmd.startsWith("ffmpeg ")) {
+                    playCmd = playCmd.substring(7).trim()
+                }
+                if (playCmd.startsWith("http://") || playCmd.startsWith("https://")) {
+                    playCmd
+                } else {
+                    ""
+                }
+            } else {
+                ""
+            }
+        } catch (_: Throwable) {
+            ""
+        } finally {
+            try { conn?.disconnect() } catch (_: Throwable) {}
+        }
+    }
+
+    private fun resolveAndStartSource(src: StreamSourceItem, isInitial: Boolean) {
+        if (src.stalkerCmd.isNotEmpty() && src.stalkerEndpoint.isNotEmpty()) {
+            thread(start = true) {
+                val freshUrl = resolveFreshStalkerUrl(src)
+                handler.post {
+                    if (!isSafeUi()) return@post
+                    if (freshUrl.isEmpty()) {
+                        loadingSpinner.visibility = View.GONE
+                        if (activeSourceIndex + 1 < streamSources.size) {
+                            switchToStreamSource(activeSourceIndex + 1)
+                        } else {
+                            showError("Stalker stream link expired or unavailable.")
+                        }
+                    } else if (isInitial) {
+                        initExoPlayer(freshUrl, currentMovieTitle, currentUserAgent, currentPreset, src.headers)
+                    } else {
+                        playResolvedUrlOnExistingPlayer(freshUrl, src)
+                    }
+                }
+            }
+        } else {
+            if (isInitial) {
+                initExoPlayer(src.url, currentMovieTitle, currentUserAgent, currentPreset, src.headers)
+            } else {
+                playResolvedUrlOnExistingPlayer(src.url, src)
+            }
+        }
+    }
+
+    private fun playResolvedUrlOnExistingPlayer(resolvedUrl: String, selected: StreamSourceItem) {
+        val exo = player ?: return
+        applyHeadersToHttpFactory(selected.headers)
+
+        val lower = resolvedUrl.lowercase(Locale.ROOT)
+        val itemBuilder = MediaItem.Builder()
+            .setUri(Uri.parse(resolvedUrl))
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(currentMovieTitle).build())
+        when {
+            lower.contains(".m3u8") -> itemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+            lower.contains(".mpd") -> itemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
+        }
+        currentMediaItem = itemBuilder.build()
+
+        exo.stop()
+        exo.setMediaItem(currentMediaItem)
+        exo.prepare()
+        exo.playWhenReady = true
+        showFeedback("Playing: ${selected.server}")
     }
 
     private fun configureDeviceSpecificHud() {
@@ -372,7 +465,24 @@ class CinemaPlayerActivity : Activity() {
                                 if (v.isNotEmpty()) hdrMap[k] = v
                             }
                         }
-                        streamSources.add(StreamSourceItem(srv, ttl, sUrl, hin, multi, hdrMap))
+                        val stEndpoint = obj.optString("stalkerEndpoint", "")
+                        val stCmd = obj.optString("stalkerCmd", "")
+                        val stType = obj.optString("stalkerMediaType", "vod")
+                        val stEp = obj.optInt("stalkerEpisode", 0)
+                        streamSources.add(
+                            StreamSourceItem(
+                                server = srv,
+                                title = ttl,
+                                url = sUrl,
+                                isHindi = hin,
+                                isMultiAudio = multi,
+                                headers = hdrMap,
+                                stalkerEndpoint = stEndpoint,
+                                stalkerCmd = stCmd,
+                                stalkerMediaType = stType,
+                                stalkerEpisode = stEp
+                            )
+                        )
                     }
                 }
             }
@@ -522,13 +632,7 @@ class CinemaPlayerActivity : Activity() {
                         currentActiveUrl = streamSources[0].url
                         setConnectingState(false)
                         loadingSpinner.visibility = View.VISIBLE
-                        initExoPlayer(
-                            currentActiveUrl,
-                            currentMovieTitle,
-                            currentUserAgent,
-                            currentPreset,
-                            streamSources[0].headers
-                        )
+                        resolveAndStartSource(streamSources[0], isInitial = true)
                         if (!isTvDevice) {
                             playPauseBtn.requestFocus()
                         }
@@ -818,6 +922,7 @@ class CinemaPlayerActivity : Activity() {
     private fun isIptvSource(item: StreamSourceItem): Boolean {
         val urlLow = item.url.lowercase(Locale.ROOT)
         return urlLow.contains("/movie/") || urlLow.contains("/series/") ||
+            item.stalkerCmd.isNotEmpty() ||
             item.server.contains("stalker", true) || item.server.contains("portal", true) ||
             item.server.contains("livebox", true) || item.server.contains("iptv", true) ||
             item.server.contains("tv", true) || item.server.contains("ott", true)
@@ -1301,8 +1406,12 @@ class CinemaPlayerActivity : Activity() {
         val retryBtn = createHudButton("Retry") {
             errorOverlay.visibility = View.GONE
             loadingSpinner.visibility = View.VISIBLE
-            player?.prepare()
-            player?.playWhenReady = true
+            if (activeSourceIndex in streamSources.indices) {
+                resolveAndStartSource(streamSources[activeSourceIndex], isInitial = false)
+            } else {
+                player?.prepare()
+                player?.playWhenReady = true
+            }
         }
         val switchSrcErrBtn = createHudButton("Switch Source") {
             errorOverlay.visibility = View.GONE
@@ -1685,7 +1794,6 @@ class CinemaPlayerActivity : Activity() {
 
     private fun switchToStreamSource(index: Int) {
         if (!isSafeUi() || index !in streamSources.indices) return
-        val exo = player ?: return
         activeSourceIndex = index
         val selected = streamSources[index]
         currentActiveUrl = selected.url
@@ -1694,23 +1802,7 @@ class CinemaPlayerActivity : Activity() {
         loadingSpinner.visibility = View.VISIBLE
         errorOverlay.visibility = View.GONE
 
-        applyHeadersToHttpFactory(selected.headers)
-
-        val lower = selected.url.lowercase(Locale.ROOT)
-        val itemBuilder = MediaItem.Builder()
-            .setUri(Uri.parse(selected.url))
-            .setMediaMetadata(MediaMetadata.Builder().setTitle(currentMovieTitle).build())
-        when {
-            lower.contains(".m3u8") -> itemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
-            lower.contains(".mpd") -> itemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
-        }
-        currentMediaItem = itemBuilder.build()
-
-        exo.stop()
-        exo.setMediaItem(currentMediaItem)
-        exo.prepare()
-        exo.playWhenReady = true
-        showFeedback("Playing: ${selected.server}")
+        resolveAndStartSource(selected, isInitial = false)
     }
 
     private fun createSourcesPill(): StateListDrawable {
@@ -1836,6 +1928,12 @@ class CinemaPlayerActivity : Activity() {
                     applyResizeModeToPlayer(resizeModes[resizeIndex])
                     if (loudnessEnhancer == null) {
                         attachLoudnessEnhancer(exo.audioSessionId)
+                    }
+                } else if (state == Player.STATE_ENDED && exo.duration <= 0L) {
+                    if (activeSourceIndex + 1 < streamSources.size) {
+                        switchToStreamSource(activeSourceIndex + 1)
+                    } else {
+                        showError("Stream empty or expired. Try switching source.")
                     }
                 }
                 updatePlayPauseLabel()
