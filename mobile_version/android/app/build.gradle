@@ -1,9 +1,26 @@
-dependencies {
-def media3_version = "1.4.1"
-implementation "androidx.appcompat:appcompat:1.7.0"
-implementation "androidx.media3:media3-exoplayer:$media3_version"
-implementation "androidx.media3:media3-exoplayer-hls:$media3_version"
-implementation "androidx.media3:media3-exoplayer-dash:$media3_version"
-implementation "androidx.media3:media3-ui:$media3_version"
-implementation "androidx.media3:media3-common:$media3_version"
+pluginManagement {
+val flutterSdkPath = run {
+val properties = java.util.Properties()
+file("local.properties").inputStream().use { properties.load(it) }
+val flutterSdkPath = properties.getProperty("flutter.sdk")
+require(flutterSdkPath != null) { "flutter.sdk not set in local.properties" }
+flutterSdkPath
 }
+
+includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+
+repositories {
+maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
+google()
+mavenCentral()
+gradlePluginPortal()
+}
+}
+
+plugins {
+id("dev.flutter.flutter-plugin-loader") version "1.0.0"
+id("com.android.application") version "8.7.0" apply false
+id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+}
+
+include(":app")
